@@ -1,13 +1,13 @@
 # build-matterqueue — 2026-06-16
 *External artifact — referenced from matterqueue.md via build_doc: true*
 *Loaded into Claude Project for active build sessions*
-*Updated: end of Session 5 (2026-06-16)*
+*Updated: end of Session 6 (2026-06-16)*
 
 ---
 
 ## Build State
 
-Stage 1 build in progress. `matterqueue-core.js` complete (55 tests passing). `matterqueue-viewer.html` built, iterated, and verified — `appendLog` duplicate key bug found and fixed. Playwright acceptance test suite complete: 69 tests passing. **Migration tool HTML is the next build item.** Repo structure settled: `docs/`, `tests/`, `prototypes/`, `workbench/` (gitignored). Claude Code identified as the right tool for migration tool build session.
+Stage 1 nearly complete. `matterqueue-core.js` (55 tests) and `matterqueue-viewer.html` (Playwright suite now **70 tests**) verified. **Migration tool (`matterqueue-migrate.html`) built, verified headlessly against the real aggregate, and run** — `venture-portfolio/` now holds the migrated corpus: 49 ideas + 12 engines + Matterqueue/QuestionEngine/CoachingEngine, an empty `_queue.json`, and `_review.md` (0 blocking). Viewer `renderMarkdown` rewritten block-based (fixes capsule paragraph collapse) with a regression test. Schema amended to **v1.5** — compilation redefined as a process (see Build Log / Open Build Decisions). **Next: human verifies the corpus in the viewer, then closes the index as a snapshot.**
 
 ---
 
@@ -27,11 +27,13 @@ Build in this order. Each item must be working before the next begins.
 3.5. **Acceptance tests (Playwright)** ✅ DONE
    69 tests passing across 10 groups: folder load, all views render, filter logic, sync writes correct YAML, drag-to-reorder, autocomplete, conflict modal, state transitions, sync indicator, queue cap. Mock filesystem via `addInitScript` — no real File System Access API calls. `appendLog` bug discovered and fixed during test work. Committed to repo.
 
-4. **Migration tool HTML** — NEXT. Standalone HTML, same stack as viewer. Batch confirmation UI, generates MDs from aggregate and index, writes `_queue.json`, produces `_review.md` gap report. One Paragraph generation approach must be decided before building (see Open Build Decisions). Consider using Claude Code for this build session.
+4. **Migration tool HTML** ✅ DONE
+   Built in Claude Code as `matterqueue-migrate.html` (single file, shares `matterqueue-core.js`). Aggregate-driven: tolerant parse → batch-confirm review UI → generate (round-trip validated) → Pass-2 audit → `_review.md`. One Paragraph authored as editable drafts baked in (`[FILL:]` fallback); no API. Verified headlessly by eval-ing the real inline script in Node against the real aggregate/index.
 
-5. **Migration run** — run tool against actual aggregate and index. Review `_review.md`. Fix blocking items. Set flags. Add One Paragraphs where missing.
+5. **Migration run** ✅ DONE
+   Generated 61 MDs into `venture-portfolio/` (49 ideas + 12 engines); 9 fictional test MDs removed; `matterqueue.md` installed from the maintained record; QuestionEngine/CoachingEngine sparks created. `_review.md`: 0 blocking, 131 non-blocking (synergy reciprocity + 3 mini-capsule field fills), 3 suggested.
 
-6. **Verify and close index** — open viewer against migrated MDs. Verify all views. Once verified, index closed as snapshot.
+6. **Verify and close index** — NEXT. Open the viewer against `venture-portfolio/`; verify all views; resolve remaining `_review.md` items as desired; then close the index as a snapshot.
 
 ---
 
@@ -204,11 +206,11 @@ Spec files live in two places: `docs/` in repo (source of truth for Claude Code 
 
 ## Open Build Decisions
 
-1. **One Paragraph generation** — spec references in-browser generation. Confirm approach before implementing in migration tool. Fallback: [FILL:] placeholder confirmed.
-2. **Group-by implementation** — which axis should be the default for each view? Concept (current) for Actions, State for Concepts? Decide when building the group-by feature post-migration.
-3. **Focus order persistence** — current focus drag sort is session-only. Should focus order be persisted to `_focus.json` or similar? Decide before building the feature formally.
-4. **docs/ migration** — move spec files from Project knowledge into `docs/` in repo. Do this before or after migration tool build? Claude Code would then read them directly from disk.
-5. **Claude Code for migration tool** — migration tool build is a good first Claude Code session. Decide at session start whether to use Claude Code or continue in Project conversation.
+1. **Group-by implementation** — which axis should be the default for each view? Concept (current) for Actions, State for Concepts? Decide when building the group-by feature post-migration.
+2. **Focus order persistence** — current focus drag sort is session-only. Should focus order be persisted to `_focus.json` or similar? Decide before building the feature formally.
+3. **Viewer `compilation:` nav link** — viewer still renders a link for `compilation: true` expecting a file; per schema v1.5 `compilation:` is a performed-flag (no file). Tweak the viewer to link only `build_doc:` (with a regression test). Cosmetic, not blocking.
+4. **Redundant engine MD** — `the-current-attention-layer.md` was generated as an engine but is just The Current (an existing concept). Delete or merge.
+5. **`renderMarkdown` escape-before-regex** — still latent (headings containing `&`/`<`/`>` render entities); no impact on current corpus; fix before production content.
 
 *Resolved Session 3:*
 - ~~File System Access API stability~~ — confirmed stable, Chrome 86+ ✅
@@ -228,19 +230,30 @@ Spec files live in two places: `docs/` in repo (source of truth for Claude Code 
 - ~~Workbench location~~ — inside repo directory, gitignored ✅
 - ~~Claude Code for build sessions~~ — confirmed as right tool for execution sessions; Project conversation for design/spec ✅
 
+*Resolved Session 6:*
+- ~~One Paragraph generation~~ — authored editable drafts baked into the migration tool; `[FILL:]` fallback; no API ✅
+- ~~docs/ migration~~ — specs live in `docs/`; Claude Code reads them directly ✅
+- ~~Claude Code for migration tool~~ — built in Claude Code ✅
+- ~~Compilation: artifact vs process~~ — compilation is a **process** (schema v1.5); `compilation:` is a performed-flag; `compilation-[slug].md` removed; `build-[slug].md` is the only external artifact; documented in `compilation-process.md` ✅
+- ~~Logs location~~ — Action/Decision/Open-Questions logs stay canonical in the concept MD (the viewer's write target); build decisions go in the build doc ✅
+- ~~Canonical doc homes~~ — `venture-portfolio/` = concept data; `docs/` = specs + build doc; global dev protocols (bug→test) → `~/.claude/CLAUDE.md`; project `CLAUDE.md` operational-only ✅
+
 ---
 
 ## Specs
 
-- `matterqueue-schema-2026-06-16.md` — full front matter schema (v1.4)
+- `matterqueue-schema-2026-06-16.md` — full front matter schema (v1.5)
 - `matterqueue-migration-design-2026-06-15.md` — migration pass design (v1.2)
 - `matterqueue-writeback-design-2026-06-15.md` — write-back mechanism design (v1.3)
+- `compilation-process.md` — concept maturation (compilation) process; general, with Matterqueue binding
 
 *Note: `matterqueue-writeback-design-2026-06-15-amendments-v1.3.md` referenced in Session 3 build log — verify whether this exists as a separate file or was folded into the main write-back design doc before Session 6.*
 
 ---
 
 ## Build Log
+
+**2026-06-16 — Session 6** — First Claude Code build session. Built `matterqueue-migrate.html` (aggregate-driven, single file, shares `matterqueue-core.js`): tolerant parser → batch-confirm review UI → generate (round-trip validated) → Pass-2 audit → `_review.md`. Verified parser/generator/audit headlessly by eval-ing the real inline script in Node against the real aggregate/index (DOM + FS-API stubs). Ran the migration: 61 MDs into `venture-portfolio/` (49 ideas + 12 engines); 9 fictional test MDs removed; empty `_queue.json`; `_review.md` 0 blocking. One Paragraph authored as editable drafts (`[FILL:]` fallback). `matterqueue.md` installed from the maintained record and cleaned (synergy `Chat Index` → `Trail System`); QuestionEngine/CoachingEngine sparks created. Viewer: `renderMarkdown` rewritten block-based (fixed capsule fields + `**Key Insights**` collapsing into the first paragraph); added a regression test, proven red-before-green (suite 69 → 70). Decisions: aggregate-first migration; **compilation redefined as a process** (schema → v1.5; `compilation:` is a performed-flag; `compilation-matterqueue.md` deleted; `build-[slug].md` is the only external artifact; `compilation-process.md` created); concept-MD logs are canonical (build decisions go in the build doc); `docs/` canonical for specs. Added project `CLAUDE.md` (operational) and global `~/.claude/CLAUDE.md` (bug→test protocol). Wrote `ingest-to-schema-playbook` (reusable doc → Downloads). Next: human verifies the corpus in the viewer, then closes the index.
 
 **2026-06-16 — Session 5** — Acceptance test suite built and all 69 tests passing. Mock filesystem via `addInitScript` bypasses File System Access API picker. 10 test groups: folder load, all views render, filter logic, sync writes correct YAML, drag-to-reorder, autocomplete, conflict modal, state transitions, sync indicator, queue cap. Root-caused `appendLog` duplicate key bug via diagnostic `page.evaluate` chain — `{ [fieldMap[section]]: [entry], actionLog:[], ... }` silently overwrote computed key with empty array; fixed in viewer and test updated to call `appendLog` directly. Committed to repo. Repo structure settled: `docs/`, `tests/`, `prototypes/`, `workbench/` (gitignored). Claude Code identified as right tool for build/execution sessions. `essential-prompts` updated: Change 12 — git push block added to `/sync-docs` Step 4; Claude Code workflow note added.
 

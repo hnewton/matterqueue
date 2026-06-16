@@ -1,25 +1,4 @@
 {
   "updated": "2026-06-16",
-  "queue": [
-    {
-      "filename": "driftmap.md",
-      "description": "Write positioning doc against Google Maps and Felt"
-    },
-    {
-      "filename": "glassbell.md",
-      "description": "Prototype the ambient notification UI"
-    },
-    {
-      "filename": "glassbell.md",
-      "description": "Define payload schema for notification types"
-    },
-    {
-      "filename": "frostline.md",
-      "description": "Build capture widget prototype"
-    },
-    {
-      "filename": "pushwave.md",
-      "description": "Define event contract between Pushwave and consuming products"
-    }
-  ]
+  "queue": []
 }

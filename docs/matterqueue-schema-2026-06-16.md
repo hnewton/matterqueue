@@ -1,9 +1,10 @@
 # Matterqueue Front Matter Schema
-*Version 1.3 — 2026-06-15*
+*Version 1.5 — 2026-06-16*
 *Status: Locked — Stage 1 reference*
 *Amendments v1.1: system MD dates removed; try_it/map_it clarified; name uniqueness added; state transition behaviors added; absorption Decision Log behavior added; instructions MD deferred*
 *Amendments v1.2: queued boolean on action items; _queue.json global queue file; three viewer views (Queue / All Actions / Concept); position field clarified as local-only*
 *Amendments v1.3: compilation and build_doc boolean flags added; external artifact types defined (compilation-[concept].md, build-[concept].md); Compilation section removed from concept MD body; body structure updated; field presence table updated*
+*Amendments v1.5: compilation redefined as a process — `compilation:` is a performed-flag (like `try_it`/`map_it`), not a file pointer; `compilation-[slug].md` external artifact removed; `build-[slug].md` is the only external artifact; see `compilation-process.md`*
 
 ---
 
@@ -112,7 +113,7 @@ actions:
 
 **brief** — More than a capsule, less than a compilation. Working notes, early signals, open questions, session outputs accumulated over time. No fixed structure beyond the capsule it builds on.
 
-**compilation** — Multiple sessions synthesized. Build-ready. Ceiling of the MD folder system. At this level, two external artifacts exist alongside the concept MD: `compilation-[slug].md` (human-facing synthesis) and `build-[slug].md` (AI working instrument). Flagged via `compilation:` and `build_doc:` booleans in front matter. The concept MD body does not contain a Compilation section — that content lives in the external compilation document.
+**compilation** — Multiple sessions synthesized. Build-ready. Ceiling of the MD folder system. The synthesis lives *in* the concept MD (current Idea Capsule on top, prior versions preserved below; Brief sections for accumulated context) — there is no separate compilation file. Reaching this level is the output of the compilation process (see `compilation-process.md`). One external artifact may exist alongside the concept MD when it enters active build: `build-[slug].md` (AI working instrument), flagged via `build_doc:`.
 
 #### State definitions
 
@@ -136,7 +137,7 @@ actions:
 | `try_it` | boolean | ❌ | Permanent signal that a prototype action has been identified or run. Maps to action `type: prototype`. Not a completion tracker — set to true when the first prototype action is created; never flipped back. |
 | `map_it` | boolean | ❌ | Permanent signal that a research or mapping action has been identified or run. Maps to action `type: research`. Not a completion tracker — set to true when the first research action is created; never flipped back. Neither, one, or both may be true independently. |
 | `todoist` | boolean | ❌ | `true` if this concept has a corresponding Todoist entry. No ID. No sync back. Boolean only. |
-| `compilation` | boolean | ❌ | `true` signals that `compilation-[slug].md` exists in this folder. Viewer surfaces as a navigation link. Set when the first compilation document is produced. |
+| `compilation` | boolean | ❌ | `true` signals a **compilation pass has been performed** — loose context (old chats, notes) gathered and synthesized into this MD. A performed-flag like `try_it`/`map_it`, **not** a file pointer; no external compilation file exists. See `compilation-process.md`. |
 | `build_doc` | boolean | ❌ | `true` signals that `build-[slug].md` exists in this folder. Viewer surfaces as a navigation link. Set when the concept enters active build. |
 
 ---
@@ -223,7 +224,7 @@ A single `_queue.json` file lives at the domain folder root alongside `_system.m
 
 Standard section order for all MDs. Not all sections are present at every doc_level — see requirements below.
 
-The Compilation document and Build doc are **external files**, not body sections. They live alongside the concept MD in the folder and are flagged via `compilation:` and `build_doc:` in front matter.
+The Build doc is an **external file**, not a body section. It lives alongside the concept MD in the folder and is flagged via `build_doc:`. There is no separate compilation document — compilation synthesis lives in the concept MD body; `compilation:` is a performed-flag.
 
 ```
 ## Idea Capsule — [most recent date]
@@ -278,7 +279,7 @@ with why it's real or why now. Three to five sentences. Written to be spoken or 
 | spark | ❌ — name and one sentence in body is sufficient | None |
 | capsule | ✅ — full schema above | None |
 | brief | ✅ — full schema; Brief sections accumulate below | None |
-| compilation | ✅ — full schema; prior capsule versions preserved below Brief | `compilation-[slug].md` required; `build-[slug].md` when in active build |
+| compilation | ✅ — full schema; prior capsule versions preserved below Brief | `build-[slug].md` when in active build |
 
 ---
 
@@ -298,27 +299,7 @@ Brief sections added above older ones.]
 
 ## External Artifacts
 
-At `compilation` doc_level, two external files live alongside the concept MD in the folder. Neither is a body section — they are separate files referenced via front matter flags.
-
-### compilation-[slug].md
-
-Human-facing synthesis document. Produced at the end of a compilation session. Updated each session that meaningfully advances the concept. Filename derived from concept name slug.
-
-```markdown
-# compilation-[concept] — [YYYY-MM-DD]
-
-## Context
-[Current state of the concept. What exists, what is decided, what is in motion.
-Present tense. 3–6 sentences. Written for a human orienting to the concept.]
-
-## Decisions
-[Every settled decision. One line each: what was decided and why.
-Exhaustive — not grouped by theme. Priority-ordered.]
-
-## Open Questions
-[Everything unresolved. Priority-ordered. Each item is a question,
-not a task — tasks go in the action queue in the concept MD.]
-```
+At `compilation` doc_level, one external file may live alongside the concept MD in the folder once the concept enters active build. It is not a body section — it is referenced via the `build_doc:` flag. Compilation has no external file; its synthesis lives in the concept MD body (see `compilation-process.md`).
 
 ### build-[slug].md
 
@@ -369,14 +350,13 @@ decided, what changed. Reverse chronological — newest first.]
 
 1. essential-prompts.md ← behavioral rules
 2. [concept].md ← concept record and front matter
-3. compilation-[concept].md ← synthesis and decisions
-4. build-[concept].md ← this file
-5. [spec files as needed]
+3. build-[concept].md ← this file
+4. [spec files as needed]
 ```
 
-**File naming:** Both external artifacts derive their filename from the concept name slug, consistent with the concept MD naming rules. `ThinkMutant` → `compilation-thinkmutant.md` and `build-thinkmutant.md`.
+**File naming:** The build doc derives its filename from the concept name slug, consistent with the concept MD naming rules. `ThinkMutant` → `build-thinkmutant.md`.
 
-**Viewer behavior:** When `compilation: true` or `build_doc: true` is set in front matter, the viewer surfaces navigation links to the corresponding files in the concept view header.
+**Viewer behavior:** When `build_doc: true` is set in front matter, the viewer surfaces a navigation link to `build-[slug].md` in the concept view header. `compilation: true` is a performed-flag only — no file, no link.
 
 **Specs as supporting artifacts:** For technically complex concepts, spec documents (architecture, schema, mechanism designs) live alongside the build doc in the folder and are referenced from the build doc's Specs section. They are not embedded in the build doc — they are the detail layer it points to. Simple concepts may have no external specs; their build doc contains everything needed inline.
 
@@ -476,7 +456,7 @@ modified_date: 2026-06-10
 | try_it | ❌ | optional | optional | optional |
 | map_it | ❌ | optional | optional | optional |
 | todoist | ❌ | optional | optional | optional |
-| compilation | ❌ | ❌ | ❌ | ✅ when compilation doc exists |
+| compilation | ❌ | optional | optional | ✅ when a compilation pass has been performed |
 | build_doc | ❌ | ❌ | ❌ | ✅ when in active build |
 | uses | ❌ | optional | optional | optional |
 | synergies | ❌ | optional | optional | optional |
@@ -495,7 +475,7 @@ System-triggered prompts on specific state changes. All others are silent.
 | → `absorbed` | Prompts: "Review [absorbed idea]'s open actions — recreate any that should carry forward in [absorbing idea]. Open [absorbed idea] now?" (Open / Done). Appends one entry to absorbing idea's Decision Log: `[date] — [absorbed name] absorbed into this concept. See [filename] for full history.` |
 | → `retired` | Confirmation prompt: "Mark [name] as retired? This is a clean close — nothing carries forward." (Confirm / Cancel). Prevents accidental retirement. |
 | `focus: true` on a third concept | Warning: "You have 3 concepts marked as focus. Recommended limit is 2. Continue?" Soft warning — not a block. |
-| `doc_level` → `compilation` | Prompt: "Compilation signals build-readiness. Create compilation-[slug].md now?" (Yes / Not yet). If Yes: opens compilation doc template. |
+| `doc_level` → `compilation` | Prompt: "Compilation signals build-readiness. Create build-[slug].md now?" (Yes / Not yet). If Yes: opens the build doc template. |
 | `queued: true` on 11th action | Warning: "Queue has 10 items. Consider completing before adding more." Soft warning — not a block. |
 
 All other transitions — `parked`, action state changes, `try_it`/`map_it` flags — are silent.
@@ -522,8 +502,9 @@ Three distinct views. Each has a distinct job.
 
 ---
 
-*Matterqueue Schema v1.4 — locked for Stage 1 build*
+*Matterqueue Schema v1.5 — locked for Stage 1 build*
 *Amendments v1.1: system MD dates removed; try_it/map_it clarified; name uniqueness added; state transition behaviors added; absorption Decision Log behavior added; instructions MD deferred*
 *Amendments v1.2: queued boolean on action items; _queue.json global queue file; three viewer views (Queue / All Actions / Concept); position field clarified as local-only*
 *Amendments v1.3: compilation and build_doc boolean flags added; external artifact types defined; Compilation section removed from concept MD body; compilation doc_level definition updated; body structure updated; field presence table updated*
 *Amendments v1.4: actions field allowed at spark doc_level (optional); a spark with a next step is a valid and common real-world case*
+*Amendments v1.5: compilation redefined as a process — `compilation:` is a performed-flag (like `try_it`/`map_it`), not a file pointer; `compilation-[slug].md` external artifact removed; `build-[slug].md` is the only external artifact; compilation process documented in `compilation-process.md`*

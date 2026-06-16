@@ -1,0 +1,1491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Matterqueue — Migration</title>
+<style>
+/* ─── TOKENS (shared with viewer) ──────────────────────────────────────────── */
+:root {
+  --bg:          #1C1C1E;
+  --surface:     #2C2C2E;
+  --surface2:    #383838;
+  --border:      #3A3A3C;
+  --text:        #F2EFE8;
+  --muted:       #9A9A9A;
+  --amber:       #D4A96E;
+  --sage:        #7AAF80;
+  --danger:      #C07070;
+  --purple:      #B88FC8;
+  --blue:        #7AAFC8;
+  --mono:        ui-monospace, 'SF Mono', Menlo, 'Courier New', monospace;
+  --sans:        system-ui, -apple-system, sans-serif;
+  --header-h:    44px;
+  --radius:      4px;
+  --transition:  140ms ease;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13px; line-height: 1.5; }
+button { font-family: inherit; font-size: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input, select, textarea {
+  font-family: inherit; font-size: inherit; color: inherit; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 8px; outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--amber); }
+textarea { resize: vertical; width: 100%; line-height: 1.45; }
+a { color: var(--amber); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ─── LAYOUT ───────────────────────────────────────────────────────────────── */
+#app { display: flex; flex-direction: column; min-height: 100vh; }
+
+#header {
+  height: var(--header-h); display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 50;
+  background: var(--bg); gap: 20px; flex-shrink: 0;
+}
+#logo { font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; }
+#logo .tag { color: var(--amber); }
+#steps { display: flex; gap: 6px; align-items: center; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+#steps .step { padding: 2px 8px; border: 1px solid var(--border); border-radius: var(--radius); }
+#steps .step.active { color: var(--amber); border-color: var(--amber); }
+#steps .step.done { color: var(--sage); border-color: var(--sage); }
+#steps .sep { opacity: 0.4; }
+
+#main { flex: 1; padding: 24px 20px 80px; max-width: 1080px; width: 100%; margin: 0 auto; }
+
+h2.section-title { font-size: 15px; font-weight: 600; margin: 28px 0 6px; }
+h2.section-title:first-child { margin-top: 0; }
+.subtle { color: var(--muted); }
+.mono { font-family: var(--mono); }
+
+/* ─── BUTTONS ──────────────────────────────────────────────────────────────── */
+.btn {
+  padding: 7px 16px; border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: 12px; color: var(--text); background: var(--surface); transition: var(--transition);
+}
+.btn:hover { border-color: var(--amber); }
+.btn.primary { background: var(--amber); color: #1C1C1E; border-color: var(--amber); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.primary:disabled { opacity: 0.4; cursor: not-allowed; filter: none; }
+.btn.ghost { background: none; }
+.btn.danger { color: var(--danger); border-color: var(--danger); }
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* ─── LANDING ──────────────────────────────────────────────────────────────── */
+.picker-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 18px 20px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+.picker-card .label { font-weight: 600; }
+.picker-card .req { color: var(--amber); font-size: 11px; font-family: var(--mono); }
+.picker-card .opt { color: var(--muted); font-size: 11px; font-family: var(--mono); }
+.picker-card .status { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.picker-card .status.ok { color: var(--sage); }
+.notice { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--amber);
+  border-radius: var(--radius); padding: 12px 16px; margin: 14px 0; color: var(--muted); }
+.notice.warn { border-left-color: var(--danger); }
+
+/* ─── PROGRESS / SUMMARY BAR ───────────────────────────────────────────────── */
+#actionbar {
+  position: sticky; bottom: 0; z-index: 40; background: var(--bg); border-top: 1px solid var(--border);
+  padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  margin: 0 -20px -80px; padding-left: max(20px, calc(50% - 540px + 20px)); padding-right: max(20px, calc(50% - 540px + 20px));
+}
+#progress-readout { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+#progress-readout b { color: var(--text); }
+
+/* ─── CARDS ────────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 14px 16px; margin-bottom: 12px;
+}
+.card.skipped { opacity: 0.45; }
+.card.engine { border-left: 3px solid var(--purple); }
+.card.err { border-color: var(--danger); }
+.card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.card-head .name { font-size: 15px; font-weight: 600; }
+.card-head .slug { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.card-head .kindtag { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--muted); }
+.card-head .kindtag.engine { color: var(--purple); border-color: var(--purple); }
+.card-head .spacer { flex: 1; }
+.card-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.field { display: flex; flex-direction: column; gap: 3px; }
+.field > label { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.field select, .field input { min-width: 110px; }
+.field.grow { flex: 1; min-width: 200px; }
+.field.grow input { width: 100%; }
+
+.tags { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.tag { display: inline-flex; align-items: center; gap: 5px; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 3px; padding: 2px 4px 2px 8px; font-size: 11px; }
+.tag.unresolved { border-color: var(--danger); color: var(--danger); }
+.tag .x { cursor: pointer; opacity: 0.6; font-weight: 700; padding: 0 2px; }
+.tag .x:hover { opacity: 1; }
+.tag-input { min-width: 120px; font-size: 11px; padding: 2px 6px; }
+
+.actions-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.action-row { display: grid; grid-template-columns: 1fr 120px 28px; gap: 8px; align-items: center; }
+.action-row input, .action-row select { width: 100%; }
+
+.checks { display: flex; gap: 16px; align-items: center; }
+.checks label { display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+
+.preview-toggle { font-family: var(--mono); font-size: 11px; color: var(--muted); cursor: pointer; margin-top: 10px; }
+.preview-toggle:hover { color: var(--amber); }
+.preview { display: none; margin-top: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px 12px; font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: pre-wrap; max-height: 320px; overflow: auto; }
+.preview.open { display: block; }
+.preview .k { color: var(--amber); }
+
+.cap-note { font-size: 11px; color: var(--muted); font-style: italic; margin-top: 8px; }
+
+/* ─── REVIEW OUTPUT ────────────────────────────────────────────────────────── */
+pre.report { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px;
+  font-family: var(--mono); font-size: 12px; white-space: pre-wrap; line-height: 1.55; max-height: 60vh; overflow: auto; }
+.logline { font-family: var(--mono); font-size: 12px; padding: 2px 0; }
+.logline.ok { color: var(--sage); }
+.logline.fail { color: var(--danger); }
+
+/* ─── MODAL ────────────────────────────────────────────────────────────────── */
+#modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 100; }
+#modal-overlay.open { display: flex; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 24px; max-width: 520px; width: calc(100% - 40px); }
+.modal h3 { font-size: 16px; margin-bottom: 10px; }
+.modal p { color: var(--muted); margin-bottom: 16px; }
+.modal .btn-row { justify-content: flex-end; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <div id="logo">MATTERQUEUE <span class="tag">/ MIGRATE</span></div>
+    <div id="steps"></div>
+  </div>
+  <div id="main"></div>
+</div>
+<div id="modal-overlay"><div class="modal" id="modal"></div></div>
+
+<script src="matterqueue-core.js"></script>
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   APP STATE
+   ══════════════════════════════════════════════════════════════════════════════ */
+const App = {
+  step: 'landing',            // landing | review | generated | audited
+  aggregateText: null,
+  aggregateName: null,
+  indexText: null,
+  indexName: null,
+  folderHandle: null,
+  folderName: null,
+  records: [],                // parsed idea + engine records (editable)
+  aliasMap: {},               // lowercased alias/old name -> canonical name
+  nameSet: new Set(),         // canonical names (lowercased) of all records
+  genResults: null,           // { written:[], skipped:[], failed:[] }
+  reviewText: null,
+};
+
+const TODAY = (window.MQ && MQ.todayISO) ? MQ.todayISO() : new Date().toISOString().slice(0,10);
+const $main = document.getElementById('main');
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ONE PARAGRAPH DRAFTS — corpus-specific data (venture-portfolio aggregate)
+   Authored from each idea's Core Sentence / Hook / Key Insights / Why It's Real.
+   Keyed by exact idea name. Surfaced editable on the review screen; the human
+   reviews and tweaks before generation. Ideas not present here fall back to a
+   [FILL:] placeholder. Replace this block for a different corpus.
+   ══════════════════════════════════════════════════════════════════════════════ */
+const ONE_PARAGRAPHS = {
+  "InsightMutant": "Most AI tools rush to answer; InsightMutant asks. It's a question-asking engine that surfaces what someone doesn't know they need to say, replacing the dead survey and the awkward intake form with a conversation that actually goes somewhere — and the same engine that runs an estate-planning intake can run an exit interview, a photoshoot plan, or an executive-function check-in, then hand back structured insight shaped to the moment. It's already across multiple deep build sessions, and it's the rare asset that's both core infrastructure and a product people would pay for on its own. When the questions are this good, the answers take care of themselves.",
+  "The Current": "Everything you pay attention to — notes, links, conversations, images — disappears into a dozen apps that don't talk to each other. The Current is a personal attention layer that captures all of it with zero friction, then lets you render it as whatever you need in the moment: a moodboard, a timeline, a brief, a knowledge graph, a recommendation. Your data lives in your own store, never ours, so sovereignty is the foundation rather than an afterthought. It's the most developed idea in the ecosystem, and every tool that feeds it makes the next one stickier.",
+  "CobaltBat": "Hiring still runs on keyword matching, which is why great candidates and the right employers keep missing each other. CobaltBat starts where the value is obvious — ResumeMutant, a genuinely useful resume and professional-identity tool candidates want on day one — and quietly builds the semantic matching layer underneath that makes employer-candidate fit mean something. The same matching engine powers Siteframe and Alumn.ai, so it gets built once and earns three times. Start with the tool people love and let the marketplace emerge from traction rather than forcing both sides at once.",
+  "EF Coach": "Most productivity apps are built for people who don't need them — they assume the executive function that ADHD, learning differences, and overwhelm make unreliable. EF Coach is an AI coach that works the way these minds actually work: a thinking partner for the daily reviews, forward plans, and progress tracking where executive function breaks down most, not another to-do list to abandon. Powered by InsightMutant's questioning engine, it scaffolds initiation and reflection instead of just storing tasks. It's the highest personal-impact idea in the portfolio, with the clearest user.",
+  "ContextMutant": "Most people use AI at a fraction of its capability — not for lack of intelligence but for lack of fluency, and fluency is teachable and measurable, which makes it a product. ContextMutant measures how effectively a person or team actually uses AI, then closes the gap with specific interventions and a before/after score employers can trust. The differentiator is the data source: real conversation history via Trail System, not a quiz — what context people bring and how output quality tracks input quality. For organizations pouring money into AI tooling, this is the missing answer to whether any of it is landing.",
+  "DiffMutant": "Diff is a programmer's idea — show me what changed between two versions — and almost nothing applies it to the things that matter most: documents, relationships, attention, and behavior drifting over time. DiffMutant is a pattern-matching engine that detects that drift across any corpus, surfacing what has shifted, diverged, or quietly started becoming something else. It lives inside The Current as its drift-detection layer and shows up concretely as regime-change detection in HypothesisEngine. Build it once the corpus is rich enough to make 'what changed' worth knowing.",
+  "Trail System": "Every AI conversation generates real knowledge, and almost all of it vanishes the moment you start a new chat. Trail System turns your conversation history into a searchable, connectable personal asset and — crucially — carries context from one session to the next, killing the most common friction in AI-assisted work. It's useful standalone today and becomes The Current's retrieval layer tomorrow, generating the corpus everything else depends on. This very triage is the proof of concept: dozens of ideas and connections that would otherwise be an unreadable scroll.",
+  "Patterntopia": "Patterntopia is a single generative engine that turns any pattern source — geometric, organic, photographic, invented — into infinite variation, then lets that variation live anywhere: a printed cushion, an ambient screen, a VJ wall at a concert. The app handles the math and the rules; the human brings the taste. Because print-on-demand fulfillment is built in, the business model isn't bolted on later — finding something beautiful and holding it is one continuous arc. Validate the generative engine first and every other context, from Roku ambient channels to live events, inherits it.",
+  "Siteframe": "Commercial real estate decisions happen at the suite level, but the data that exists is stuck at the building level — CoStar's world. Siteframe gives brokers and owners a free 3D siteplan tool they actually want, and in exchange quietly builds the suite-level inventory layer that powers a semantic marketplace — no rip-and-replace, just making the incumbent irrelevant at the edges. 'Accurate enough' beats forensic precision here, and the owner reporting dashboard creates a flywheel where the data maintains itself. The cold-start problem that kills marketplaces is solved by a tool people use before any marketplace exists.",
+  "HypothesisEngine": "Most systematic trading fails by conflating two different jobs: generating a trade idea and deciding which triggers to actually take. HypothesisEngine separates them — AI and adversarial generation produce rule candidates from structural market logic, rigorous vectorized backtesting with multiple-comparison corrections decides which survive, and a living library ranks the winners by performance, while the human never touches the fragile middle. Built first for EURUSD and SPY, it's architected from day one to repoint at any time-series domain, from volatility to vibration sensors. AI generates the candidates; statistics decides the survivors.",
+  "ForecastMutant": "Palantir gives big organizations the power to make their operational data legible and act on it; everyone else gets spreadsheets and gut feel. ForecastMutant closes that gap — a calibrated forecasting platform that blends an organization's own history with cooperative fingerprint matching across a contributor network, the Waze model applied to operations. The buyer sees three scenario cards and a recommendation; the sixteen-layer engine stays invisible underneath, and a public calibration track record is the trust product. The network is the moat, because algorithms commoditize and a co-op where everyone gets back more than they put in does not.",
+  "MapMutant": "Most organizations still work with maps that look like 2003 — a static JPEG exported from QGIS and emailed around. MapMutant lets anyone describe what they need and get a map in seconds, then — the more powerful half — watches that geography mutate as the world changes, flagging the competitor that just opened or the catchment that just shifted. The creation tool spreads city by city as its own advertisement; the recurring revenue lives in the intelligence layer, a trivially cheap monthly digest against the hours spent checking manually. One engine, two buyers, one viral loop.",
+  "RouteMutant": "Field operators — mobile vets, crop scouts, service techs — know their scheduling feels wrong but can't prove why, while the answer sits unread in their own historical route data. RouteMutant runs as a sidecar to whatever they already use, reads that history back as a paid forensic report, then compounds into a subscription that surfaces the next best move before the route runs. The forensic-first model is the trick: the thing customers pay for is the thing that generates the data the product needs, so there's no cold start. It's DiffMutant's playbook pointed at routes, and the pattern library quietly becomes the platform.",
+  "FlightMutant": "You're flexible on dates, airports, and even destination — which means the trip you want is buried in fifty searches no human will ever run. FlightMutant takes one plain-language prompt, runs all the combinations automatically, and returns ranked results with booking links and a savings delta against a fixed baseline. The personal-use version is already a validated proof of concept with real API responses and savings of hundreds of dollars a ticket. It's the conceptual seed of the whole Mutant portfolio: combinatorial work that's prohibitive for people and trivial for machines.",
+  "StationPing": "Every transit tool assumes you already know what the system makes possible and just need to execute a trip; StationPing assumes you don't. Organized around the station as the starting point, it removes the research burden of exploring a city — for the traveler arriving disoriented and the local who's seen maybe twenty percent of their own network — by turning locals' knowledge into a shared, compounding asset. It's the dopamine of a vacation without the packing, and a marketing engine transit authorities would fund because surfacing what's reachable does their ridership job better than their own campaigns. The great sandwich shop near the station, the festival two trains away, the neighborhood you've lived beside for years and never visited.",
+  "ThinkMutant": "Every set of ideas has a skeleton, but tools like Miro and XMind hand you a blank canvas and shapes and never understand what you put in them. ThinkMutant separates the idea graph from how it's shown, so the same content renders as a mind map, an outline, an affinity cluster, or an argument map — change the view and you see something new without losing anything. It reveals the structure already latent in your thinking instead of making you drag it into existence, and it does it in a way that's tactile and genuinely fun. Standalone it's a thinking tool; underneath it's the visual synthesis layer for The Current and the rest of the ecosystem.",
+  "Subtext": "Every contract and document corpus has a structure — obligations, connections, gaps — that's completely invisible to linear reading. Subtext is an X-ray: it ingests any document set, extracts the underlying semantic graph, and renders it as a plain-English audit, a mind map, a JSON profile, or a cross-reference map depending on the question. For an individual it answers 'what am I actually signing?'; for a deal team it shows how a clause in one document reshapes obligations in another — all without ever practicing law. It shares its ingest engine with Siteframe, so the hard part gets built once and pays off twice.",
+  "DocMutant Robotics": "Every robotics simulator exists, but nobody built the pipeline that feeds them — pre-deployment teams still spend weeks hand-building scenario inputs from manuals and safety standards. DocMutant Robotics is that missing pipeline: ingest the procedural documents, output simulator-agnostic task schemas, and give teams the structured inputs policy validation actually requires. The gap is confirmed by primary source, the buyer is a clean self-serve robotics startup, and the existing document-ingest stack makes a three-week solo prototype genuinely feasible. It's the CI/CD pipeline for robots, starting at the layer everyone skipped.",
+  "Foldex": "Origami looks accessible and isn't — the diagrams are cryptic and most folding traditions are poorly documented. Foldex makes any tradition learnable: point your phone at something, get a fold, and follow plain-language steps with a printable template. The library compounds with every user and AI-generated pattern, and the cultural-preservation angle gives it gravity beyond a fun app. Paper airplanes get you in the door; the world's folding traditions are the ceiling.",
+  "Manhole": "Manhole covers are quietly, obsessively collected — and Manhole turns a photo of one into a physical collectible you can actually hold, with the provenance of having found it yourself. The photo-to-relief pipeline is the reusable engine; the cover is just the first surface, and every submission makes a global community archive of cities-through-their-street-art richer. It's the validated first vertical of ShapeSake, proving the pipeline works before scaling to every passion community. You found it, you photographed it, now you own it.",
+  "ShapeSake": "People who love objects — guitars, watches, cameras, ceramics, architectural details — want to hold the ones they find and can't have. ShapeSake is the photo-to-physical pipeline that gives any passion community the power to materialize them: a photograph becomes a 3D model, a relief casting, a digital twin, or a physical reproduction. The capability is the product; the obsessive communities bring the objects, the passion, and the distribution, and per-reproduction commerce means zero inventory and demand-validated production. Manhole already proved the pipeline — you found something incredible, and ShapeSake lets you hold it.",
+  "Uncard": "Stand at a Hallmark rack during something genuinely hard — a parent's dementia, say — and none of the cards are right, because the industry is too cowardly to acknowledge the moment. Uncard is the anti-greeting-card line for exactly those occasions, starting with the dark, true humor of caregiving, printed on demand with a dollar from every card going to research. The origin — real things a mother actually said — is impossible to manufacture or compete with, and every card is its own Instagram-native marketing asset. The card you couldn't find at Hallmark, finally.",
+  "HeadSim": "Every costly decision mistake has a name — loss aversion, anchoring, sunk cost — but you don't unlearn them from a lecture, you unlearn them from reps. HeadSim is a cognitive flight simulator: you make high-stakes decisions under realistic pressure in a safe place where failure is instructive, and an InsightMutant-powered coach debriefs not whether you were right but what you were thinking. Investing is the first content domain and the most personally motivated, but the same engine trains medical, legal, and crisis judgment. Practice the mind, not the market.",
+  "Flaglore": "You already know what the flags look like; Flaglore teaches you what they mean. Instead of another rote quiz, it leads with story and symbolism and reveals the systems — Nordic crosses, pan-African colors, colonial DNA — so you learn a grammar, not 195 isolated facts. Flags turn out to be a trojan horse for real geographic, historical, and cultural curiosity. Low effort, high fun, and genuinely differentiated.",
+  "Whenivia": "Whenivia isn't about right or wrong — it's about how close. It's rapid-fire date guessing across movies, music, sports, cars, watches and more, with proximity scoring that makes being a year off feel different from a decade off, plus a proven multiplayer mode. Each content domain is also an affinity community and a distribution channel — a watches deck reaches the same obsessives ShapeSake serves. The core loop is validated, the expansion to new domains is nearly free, and chronological memory happens to be a real cognitive skill worth keeping sharp.",
+  "Pawpath": "Every dog sees the world differently, and Pawpath lets you live it — a top-down walking game where your dog's personality drives every encounter, so an anxious rescue greyhound navigates the block nothing like a fearless golden puppy. That variance is the replayability and the emotional attachment, and real shelter-dog profiles give it a cause, a content pipeline, and a distribution partner at once. The Tamagotchi attachment model is one of the most proven mechanics in games. Charming, buildable, and connected to adoption from day one.",
+  "Syllably": "Every student at every university retypes the same syllabus data into their own systems every semester — a global, universal, entirely unnecessary waste of millions of hours. Syllably makes any syllabus machine-readable and instantly integrated with the tools students already use, via a Chrome extension that needs zero institutional buy-in. The accessibility and UDL angle is a quiet backdoor to campus adoption, and the highest-need users are exactly the students EF Coach serves. The prototype already extracts Canvas assignments and pushes them straight to a to-do system — it's now a foregrounded capability inside EF Coach.",
+  "Playfield": "Nonprofits have deep domain knowledge and no way to make it interactive — Playfield is the no-code engine that turns their mission into games and simulations that educate, build empathy, and fundraise. The mechanic is systemic simulation: players inhabit multiple stakeholder roles and feel why a system is hard, the way Papers Please and Spent create complicity instead of lectures. The engine is the product and the games are infinite output — one tool, endless domains from housing to climate to immigration. Built by a nonprofit, for nonprofits, so the vehicle and the message are the same thing.",
+  "Groundtruth": "Public arguments have stopped sharing a reality, and most fact-checking just becomes another partisan operation. Groundtruth is a nonprofit dataset commons that makes it easy to find, share, and visualize factual data on contested topics — not who's right, just what's true. The discipline of staying apolitical is the entire value and the entire challenge, which is why it's built as a coalition of credible institutions rather than a startup, with a consumer fact-checking extension layered on top. In an era of collapsing trust, shared data infrastructure is exactly the thing nobody owns and everybody needs.",
+  "EarlyRead": "A fifth of kids have a learning difference, and the ones with persistent, educated parents get diagnosed while the rest get labeled lazy or disruptive — years lost to the gap between suspicion and action. EarlyRead is a triage tool, not a diagnosis: it identifies students showing enough dyslexia and learning-difference indicators to warrant professional assessment, then tells parents and teachers exactly what to do next, including their rights under IDEA and 504. Identification without a pathway is just anxiety with a label, so the pathway is the product. Public-health scale, grant-fundable, and built by someone who navigated the system firsthand.",
+  "Commonground": "Showing people they're wrong doesn't change their minds — it hardens them, because the problem was never an information deficit. Commonground flips the sequence the research says actually works: human story and shared values first, facts second, so you feel something about a person before you'll update a belief because of them. Steelmanning — arguing the other side as strongly as you can — becomes a teachable, scorable mechanic, and most factual disagreement turns out narrower than the perceived kind. The hardest problem in the set, and also the most fundable and most needed.",
+  "Pebble": "GoFundMe takes the money and walks away; Pebble takes responsibility for what happens next. It gives small community projects the operational infrastructure, donor stewardship, and experimental rigor that big philanthropy takes for granted — vetting, escrow, retrospectives, and values-based donor-project matching. Tactical urbanism outputs — murals, gardens, playgrounds — are visible, photographable proof that the money mattered. Giving at human scale, made as trustworthy and measurable as any institutional grant.",
+  "Framelab": "See the shot before you take it, and understand why after. Framelab compresses the photography learning curve with a suite of micro-apps — an exposure-triangle simulator that runs on your own photo, AI-guided pre-shoot planning, and personality-driven feedback, imagine Annie Leibovitz reviewing your lighting. The exposure-on-your-own-image trick is the emotional unlock, and the same template generalizes to any domain with visual structure: data science, design, investing, video. Prove it with photographers first; the visual-education platform is the ceiling.",
+  "Persona": "The knowledge is the LLM; the character is Persona. It's a marketplace of swappable personality modules that make any AI experience feel like a specific mind — Feynman's curiosity, a particular coach, a fictional guide — sitting on top of any model without retraining it. As LLMs commoditize, personality becomes the differentiation, and an interview-to-module pipeline lets non-technical creators build characters from source material into a real creator economy. EF Coach and InsightMutant are immediate internal customers; you choose who you're talking to.",
+  "Estatecoach": "You don't need to be rich to need an estate plan, but the 'you have to be wealthy' myth kills action before anyone opens a document. Estatecoach starts with the person, not the paperwork — an AI-guided coach that educates and demystifies until you're genuinely ready to take the next step, whatever your wealth or complexity. LegalZoom sells documents and Nolo sells content; nobody has built the coached, conversational, education-first experience, and prepared clients are worth real referral fees to the attorneys who get them. The market is enormous, the barrier is psychological, and conversation is exactly what dissolves it.",
+  "Shelterframe": "Every shelter and transitional-housing operator starts from zero — on intake, policies, service coordination, outcome tracking — reinventing the same broken wheel in every city. Shelterframe gives them shared SaaS infrastructure and an open-source playbook so compassion finally comes with operational discipline, and treats residents as customers with agency rather than passive recipients. A graduation-path mechanic produces the measurable outcomes funders require, and the open policy library means every operator learns from every other. The most complex idea in the set, and one of the most fundable and impactful.",
+  "DataMutants": "One skilled data scientist with AI tooling can now do the work of a small team — and DataMutants is the operating entity built on exactly that leverage. It runs HypothesisEngine, ForecastMutant, and RouteMutant engagements commercially, and uses that work to subsidize high-impact civic and nonprofit projects — the data-science equivalent of a law firm's pro bono. Full-workflow ownership, from engineering through presentation, is the differentiator, and an AI lead-gen engine that finds organizations sitting on underused data is a product in its own right. The commercial work funds the mission.",
+  "Phase Next": "College was never really about the classes — it was the container that made transformation possible, and nobody has rebuilt that for the people who need it again at fifty. Phase Next is that container: community, exploration, identity reconstruction, and permission to reinvent, delivered as a cohort experience with a clear before and after. AARP is discounts and advocacy; this is the transformative-experience layer, and the four evidence-based dementia-prevention pillars give it clinical credibility and an institutional funding path. The wealthiest, most underserved demographic in experiential design — and the founder is in it.",
+  "Alumn.ai": "Every school is sitting on its most underused social asset — alumni — trapped in yearbooks and stale databases nobody has figured out how to activate. Alumn.ai deconstructs that existing data into a living, searchable, privacy-first community, and the 'photo of back-then plus now' mechanic dissolves the most awkward moment in social life: the who-are-you-again reunion. Tribal affinity — we graduated together — is a real social contract that makes people help across loose ties, and the school pays because reunion attendance and giving have measurable dollar value. The data already exists; nobody has made it useful.",
+  "Walkframe": "Most community initiatives assume social skills; Walkframe designs for the people who don't have them. It's a replicable walking-club framework with the inclusion engineered in — a 15-gather-30-walk format that respects introverts and busy schedules, randomized pods that neutralize cliques, and Pacer and Sweeper roles so nobody gets left behind, literally or socially. Parallel play lowers the eye-contact pressure that makes connection hard, and Parkrun proved a simple, free, structured format can scale globally on volunteers. Community by design, not by hope — and the blueprint is already ready to pilot.",
+  "Selfont": "Capture it before you can't. Selfont turns anyone's handwriting into a personal font in about ten minutes from phone-camera photos — for preservation before dementia or ALS or aging takes it, for gifts, for physical mail that actually feels human, and for people who can no longer write but want to leave something that feels like them. Handwrytten proves the handwritten-mail market at over ten million in revenue; Selfont's edge is the genuinely personal font, with Lob handling fulfillment so there's no operation to build. The same capture even doubles as a quiet signal of cognitive or motor change over time.",
+  "Pixelform": "A bar chart tells you a number; Pixelform makes you feel it. It turns datasets into unexpected visual forms — faces, skylines, landscapes, crowds — where the data drives the parameters and the output lands emotionally in ways a heatmap never can. Chernoff faces proved the instinct in the 1970s and were abandoned because the implementation was crude, not because the idea was wrong; the technology now exists to do it beautifully. Not a venture so much as a creative research project and a feature layer for civic data work.",
+  "Obviousli": "Some truths are counterintuitive until you see the system, and then they're obvious — zipper merging, why roundabouts are safer, how compound interest works against you first. Obviousli is a growing collection of shareable animated explainers that show the system rather than assert the conclusion, each one fact-grounded by Groundtruth. Emotional charge is the shareability engine, and every artifact is standalone but builds a recognizable brand. The concept is sound; the open question is the animation engine that makes it reliably producible.",
+  "City Lights": "City Lights is a visceral, first-person flight through real city lighting data at night — not navigation, not a full 3D renderer, just the feeling of how a city looks and breathes from above after dark. Real-time data makes it alive rather than modeled, and neighborhood granularity is the emotional differentiator: a creative district at 2am and the financial core at the same moment are completely different experiences. Real street and building data add an authenticity purely generative scenes lack. It lives most naturally as ambient content within Patterntopia, a strong Roku and Apple TV candidate.",
+};
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   AGGREGATE PARSER
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+// Section numbers/titles that do NOT contain idea blocks.
+const NON_IDEA_SECTIONS = new Set([0, 1, 11, 12, 13, 14]);
+
+// Canonical field-label dictionary. Keys are normalized (lowercase, apostrophes
+// unified, "synergy with ..." collapsed to "synergy", trailing clauses stripped).
+const FIELD_MAP = {
+  'name': 'name',
+  'one phrase': 'onePhrase',
+  'core sentence': 'coreSentence',
+  'hook': 'hook',
+  'key insights': 'keyInsights',
+  'user': 'user',
+  'model': 'model',
+  "why it's real": 'whyReal',
+  'why its real': 'whyReal',
+  'flags': 'flags',
+  'synergy': 'synergy',
+  'yes... and': 'yesAnd',
+  'yes and': 'yesAnd',
+  'yes...and': 'yesAnd',
+  'next step': 'nextStep',
+  'recommendation': 'recommendation',
+  'prototype result': 'prototypeResult',
+  'current stage': 'currentStage',
+  'engine potential': 'enginePotential',
+  'status': 'statusField',
+};
+
+function normLabel(raw) {
+  let s = raw.toLowerCase().replace(/[’`]/g, "'").trim();
+  s = s.replace(/\s+—.*$/, '');       // "yes... and — ways to make it bigger" -> "yes... and"
+  s = s.replace(/\s+with\s+.*$/, ''); // "synergy with other ideas" -> "synergy"
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+}
+
+// Strip markdown / flags / parentheticals from a name fragment.
+function cleanName(s) {
+  if (!s) return '';
+  return s
+    .replace(/\*\(.*?\)\*/g, '')      // *(working title)*
+    .replace(/\*+/g, '')              // stray asterisks / bold
+    .replace(/[★⚙️🔧⚠️⚑]/g, '')
+    .replace(/—\s*#\d+.*$/, '')       // — #50
+    .replace(/#\d+/g, '')
+    .replace(/️/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Extract aliases ("formerly X", "alt: Y") from a parenthetical string.
+function extractAliases(parenthetical) {
+  const aliases = [];
+  if (!parenthetical) return aliases;
+  const re = /(?:formerly|alt names?|alt|aka)[:\s]+([^;)]+)/gi;
+  let m;
+  while ((m = re.exec(parenthetical)) !== null) {
+    m[1].split(/\s+or\s+|,/).forEach(a => {
+      const c = cleanName(a).replace(/^working title\s+/i, '').trim();
+      if (c && c.split(/\s+/).length <= 3) aliases.push(c);
+    });
+  }
+  return aliases;
+}
+
+// Parse the heading line of a "###" block. Returns { name, aliases, flags }.
+function parseHeading(line) {
+  let h = line.replace(/^###\s+/, '').trim();
+  const flags = { engine: /⚙️|⚙/.test(h), star: /★/.test(h) };
+
+  // Capture parenthetical for aliases before stripping.
+  const parenMatch = h.match(/\*\((.*?)\)\*/);
+  const aliases = extractAliases(parenMatch ? parenMatch[1] : '');
+
+  // Remove "Idea Capsule —" / "Mini Capsule —" prefix.
+  h = h.replace(/^(?:idea|mini)\s+capsule\s+—\s*/i, '');
+
+  // Detect note-type suffixes (these carry meaning we keep separately).
+  let noteState = null, noteAbsorbedBy = null;
+  const dissolvedM = h.match(/—\s*dissolved/i);
+  const absorbedM = h.match(/—\s*absorbed\s+into\s+(.+)$/i);
+  const futureM = /future\s+phase\s+note/i.test(h);
+  if (dissolvedM) noteState = 'retired';
+  if (absorbedM) { noteState = 'absorbed'; noteAbsorbedBy = cleanName(absorbedM[1]); }
+
+  // Name = text before the first " — " separator (after prefix removal),
+  // unless the dash introduces a descriptor we already captured.
+  let namePart = h;
+  const dashIdx = h.indexOf(' — ');
+  if (dashIdx !== -1) namePart = h.slice(0, dashIdx);
+
+  return { name: cleanName(namePart), aliases, flags, noteState, noteAbsorbedBy, future: futureM };
+}
+
+// Split a block body (array of lines) into a field map + leading prose.
+function parseFields(bodyLines) {
+  const fields = {};
+  const leadProse = [];
+  let current = null;
+  let buffer = [];
+  let sawField = false;
+
+  const flush = () => {
+    if (current) {
+      const val = buffer.join('\n').trim();
+      if (fields[current] === undefined) fields[current] = val;
+      else fields[current] += '\n' + val;
+    }
+    buffer = [];
+  };
+
+  for (const rawLine of bodyLines) {
+    const line = rawLine.replace(/\s+$/, '');
+    if (line.trim() === '---') { flush(); current = null; continue; }
+
+    const fm = line.match(/^\*\*(.+?)\*\*\s*(?:—|–|-|:)?\s*(.*)$/);
+    if (fm) {
+      flush();
+      const key = FIELD_MAP[normLabel(fm[1])];
+      sawField = true;
+      if (key) {
+        current = key;
+        buffer = fm[2] ? [fm[2]] : [];
+      } else {
+        current = null; // unrecognized **label** — ignore its content
+      }
+      continue;
+    }
+    if (current) buffer.push(line);
+    else if (!sawField && line.trim()) leadProse.push(line.trim());
+  }
+  flush();
+  fields._leadProse = leadProse.join(' ').trim();
+  return fields;
+}
+
+// Pull resolvable idea names out of a synergy/freeform value.
+function extractNames(text, resolver) {
+  const out = [];
+  if (!text) return out;
+  const lines = text.split('\n');
+  for (const ln of lines) {
+    const bm = ln.match(/^\s*[-*]\s+(.+)$/);
+    const candidate = bm ? bm[1] : ln;
+    // The name is the leading token before " — ", " (", or ":".
+    let head = candidate.split(/\s+—\s+|\s+–\s+|\s+\(|:/)[0];
+    head = cleanName(head);
+    if (!head) continue;
+    const resolved = resolver(head);
+    if (resolved && !out.includes(resolved)) out.push(resolved);
+  }
+  return out;
+}
+
+// Map a Recommendation/verdict string to a lifecycle state.
+function verdictToState(rec, headingNoteState) {
+  if (headingNoteState) return headingNoteState;
+  const r = (rec || '').toLowerCase();
+  if (/rolled\s+into|absorbed/.test(r)) return 'absorbed';
+  if (/dissolved/.test(r)) return 'retired';
+  if (/\bparked\b|shelf\s*it/.test(r)) return 'parked';
+  if (/dig\s*in/.test(r)) return 'active';
+  return 'active';
+}
+
+function extractAbsorbedBy(rec, headingAbsorbedBy) {
+  if (headingAbsorbedBy) return headingAbsorbedBy;
+  if (!rec) return '';
+  const m = rec.match(/(?:absorbed\s+into|rolled\s+into)\s+([^—.;]+)/i);
+  return m ? cleanName(m[1]) : '';
+}
+
+// Infer an action type from free text.
+function inferActionType(text) {
+  const t = text.toLowerCase();
+  if (/prototype|build|ship|\bpoc\b/.test(t)) return 'prototype';
+  if (/research|validate|explore|\bmap\b|study|review|investigate|interview|audit|identify|test\b/.test(t)) return 'research';
+  if (/decide|determine|choose|resolve|answer the/.test(t)) return 'decision';
+  return 'task';
+}
+
+// Split a Next Step blob into up to 3 candidate actions.
+function nextStepToActions(text) {
+  if (!text) return [];
+  const cleaned = text.replace(/\([^)]*\)/g, '');
+  const parts = cleaned.split(/(?<=[.!?])\s+(?=[A-Z(])/).map(s => s.trim()).filter(s => s.length > 8);
+  const chosen = parts.slice(0, 3);
+  return chosen.map((desc, i) => ({
+    description: desc.replace(/\s+/g, ' ').replace(/[.\s]+$/, ''),
+    type: inferActionType(desc),
+    state: 'open',
+    position: i + 1,
+  }));
+}
+
+/**
+ * Parse the whole aggregate into raw block descriptors.
+ * Returns { blocks: [{name, aliases, flags, fields, section, noteState, noteAbsorbedBy, future, raw}] }
+ */
+function splitAggregate(text) {
+  const lines = text.split(/\r?\n/);
+  const blocks = [];
+  let curSectionNum = null;
+  let cur = null; // { headingLine, bodyLines }
+
+  const pushCur = () => { if (cur) blocks.push(cur); cur = null; };
+
+  for (const line of lines) {
+    const secM = line.match(/^##\s+(\d+)\.?\s+/);
+    if (secM) { pushCur(); curSectionNum = parseInt(secM[1], 10); continue; }
+    // a "## " heading without a leading number ends the current block too
+    if (/^##\s+/.test(line) && !/^###/.test(line)) { pushCur(); continue; }
+
+    const h3 = line.match(/^###\s+/);
+    if (h3) {
+      pushCur();
+      cur = { headingLine: line, bodyLines: [], section: curSectionNum };
+      continue;
+    }
+    if (cur) cur.bodyLines.push(line);
+  }
+  pushCur();
+  return blocks;
+}
+
+/**
+ * Top-level: parse aggregate text into editable idea + engine records.
+ */
+function parseAggregate(text) {
+  const rawBlocks = splitAggregate(text);
+
+  // ── Pass A: collect candidate idea blocks (section-gated + content heuristic).
+  const candidates = [];
+  for (const b of rawBlocks) {
+    if (b.section !== null && NON_IDEA_SECTIONS.has(b.section)) continue;
+    const head = parseHeading(b.headingLine);
+    if (!head.name) continue;
+    const fields = parseFields(b.bodyLines);
+    const hasCapsuleField = fields.coreSentence || fields.onePhrase || head.noteState;
+    const isInfraOrMini = (b.section === 9 || b.section === 10);
+    // Stub pointer like "*[See Advanced Ideas section above]*"
+    const bodyText = b.bodyLines.join('\n').trim();
+    const isStub = /^\*?\[see .*above\]\*?$/i.test(bodyText) || bodyText === '';
+    if (!hasCapsuleField && !isInfraOrMini && !head.future) continue;
+    // Aliases ("formerly X", "alt: Y") often live in the **Name** field parenthetical.
+    const nameParen = (fields.name || '').match(/\*\((.*?)\)\*/);
+    if (nameParen) head.aliases = [...new Set([...(head.aliases || []), ...extractAliases(nameParen[1])])];
+    candidates.push({ head, fields, section: b.section, isStub, bodyText });
+  }
+
+  // ── Build canonical name set + alias map (needed for synergy resolution).
+  const byName = new Map(); // lowercased canonical -> record
+  const aliasMap = {};
+  const register = (canonical, aliases) => {
+    const key = canonical.toLowerCase();
+    (aliases || []).forEach(a => { if (a) aliasMap[a.toLowerCase()] = canonical; });
+  };
+
+  // ── Pass B: dedupe candidates by canonical name (prefer richest block).
+  const dedup = new Map();
+  for (const c of candidates) {
+    const key = c.head.name.toLowerCase();
+    const score = Object.keys(c.fields).length + (c.isStub ? -100 : 0);
+    const existing = dedup.get(key);
+    if (!existing || score > existing._score) {
+      c._score = score;
+      // merge aliases from both
+      if (existing) c.head.aliases = [...new Set([...(existing.head.aliases||[]), ...(c.head.aliases||[])])];
+      dedup.set(key, c);
+    } else {
+      existing.head.aliases = [...new Set([...(existing.head.aliases||[]), ...(c.head.aliases||[])])];
+    }
+  }
+
+  // Register names/aliases first so cross-references resolve.
+  for (const c of dedup.values()) register(c.head.name, c.head.aliases);
+
+  // ── Engines from Section 1 ("Confirmed candidate engines" / "Candidate engines"
+  //    / "Fulfillment surfaces"). These are bullet items, not ### blocks.
+  const engineDefs = parseEngineSection(text);
+
+  const nameSet = new Set([...dedup.keys()]);
+  engineDefs.forEach(e => nameSet.add(e.name.toLowerCase()));
+
+  // Resolver: maps any token to a canonical record name, via alias map + name set.
+  const resolver = (token) => {
+    if (!token) return null;
+    const k = token.toLowerCase();
+    if (nameSet.has(k)) {
+      // return canonical casing
+      for (const c of dedup.values()) if (c.head.name.toLowerCase() === k) return c.head.name;
+      for (const e of engineDefs) if (e.name.toLowerCase() === k) return e.name;
+    }
+    if (aliasMap[k]) return aliasMap[k];
+    return null;
+  };
+
+  // ── Pass C: build idea records.
+  const records = [];
+  for (const c of dedup.values()) {
+    if (c.isStub) continue;
+    records.push(buildIdeaRecord(c, resolver));
+  }
+
+  // ── Engines that are NOT already ideas → engine records.
+  for (const e of engineDefs) {
+    if (dedup.has(e.name.toLowerCase())) continue; // already an idea (e.g. InsightMutant)
+    records.push(buildEngineRecord(e, resolver));
+  }
+
+  // Wire uses: from engine "powers" lists (reverse map) onto product records.
+  wireEngineUses(records, engineDefs, resolver);
+
+  App.aliasMap = aliasMap;
+  App.nameSet = nameSet;
+  return records;
+}
+
+function buildIdeaRecord(c, resolver) {
+  const f = c.fields;
+  const head = c.head;
+  const state = verdictToState(f.recommendation, head.noteState);
+  const absorbed_by = state === 'absorbed' ? extractAbsorbedBy(f.recommendation, head.noteAbsorbedBy) : '';
+
+  // doc_level (content-driven, lossless)
+  let doc_level;
+  if (head.noteState || (!f.coreSentence && !f.onePhrase)) doc_level = 'spark';     // dissolved/absorbed notes, thin blocks
+  else if (f.currentStage || f.enginePotential) doc_level = 'brief';                // advanced / existing work
+  else doc_level = 'capsule';
+
+  // Ideas default to concept (most ⚙️-flagged ideas are user-facing products with
+  // engine *potential* — the engine capabilities are materialized as separate engine
+  // MDs and wired via uses:). Section-10 infrastructure notes are shared primitives.
+  const type = (c.section === 10) ? 'workflow' : 'concept';
+
+  // synergies (resolvable names only)
+  const synergies = extractNames(f.synergy, resolver).filter(n => n.toLowerCase() !== head.name.toLowerCase());
+
+  // actions from Next Step
+  const actions = nextStepToActions(f.nextStep);
+
+  // try_it / map_it (conservative aggregate signals)
+  const blob = (f.nextStep || '') + ' ' + (f.recommendation || '') + ' ' + (f.prototypeResult || '');
+  const try_it = !!f.prototypeResult || actions.some(a => a.type === 'prototype') || /prototype|build it/i.test(blob);
+  const map_it = actions.some(a => a.type === 'research') || /\bmap it\b/i.test(blob);
+
+  return {
+    kind: 'idea',
+    skip: false,
+    name: head.name,
+    aliases: head.aliases,
+    slug: MQ.nameToSlug(head.name),
+    type, doc_level, state, absorbed_by,
+    focus: false, try_it, map_it,
+    onePara: ONE_PARAGRAPHS[head.name] || '',
+    uses: [],
+    synergies,
+    actions,
+    prov: {
+      onePhrase: f.onePhrase || '',
+      coreSentence: f.coreSentence || f._leadProse || '',
+      hook: f.hook || '',
+      keyInsights: f.keyInsights || '',
+      user: f.user || '',
+      model: f.model || '',
+      whyReal: f.whyReal || '',
+      flags: f.flags || '',
+      synergy: f.synergy || '',
+      nextStep: f.nextStep || '',
+      prototypeResult: f.prototypeResult || '',
+      currentStage: f.currentStage || '',
+      enginePotential: f.enginePotential || '',
+      recommendation: f.recommendation || '',
+      leadProse: f._leadProse || '',
+    },
+    fieldsSeen: Object.keys(f).filter(k => k !== '_leadProse'),
+  };
+}
+
+function buildEngineRecord(e, resolver) {
+  const isFulfillment = /fulfillment/i.test(e.name);
+  return {
+    kind: 'engine',
+    skip: false,
+    name: e.name,
+    aliases: [],
+    slug: MQ.nameToSlug(e.name),
+    type: isFulfillment ? 'workflow' : 'engine',
+    doc_level: 'spark',
+    state: 'parked',
+    absorbed_by: '',
+    focus: false, try_it: false, map_it: false,
+    uses: [],
+    synergies: [],
+    actions: [],
+    prov: {
+      coreSentence: e.description || '',
+      powers: e.powers || [],
+      hypothesis: true,
+    },
+    fieldsSeen: ['description', 'powers'],
+  };
+}
+
+/**
+ * Parse Section 1 engine bullets. Returns [{name, description, powers:[]}].
+ */
+function parseEngineSection(text) {
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  let inEngineZone = false;
+  // The engine bullet zones live under these subsection markers in Section 1.
+  const ZONE_RE = /(confirmed candidate engines|candidate engines|fulfillment surfaces)/i;
+  let curSection = null;
+
+  for (const line of lines) {
+    const secM = line.match(/^##\s+(\d+)\.?\s+/);
+    if (secM) { curSection = parseInt(secM[1], 10); inEngineZone = false; continue; }
+    if (curSection !== 1) continue;
+    if (/^\*\*.*\*\*/.test(line.trim()) && ZONE_RE.test(line)) { inEngineZone = true; continue; }
+    if (/^###/.test(line) || /^---/.test(line)) { /* keep zone; drop notice */ }
+    if (/engine map distrust/i.test(line)) { inEngineZone = false; continue; }
+    if (/^drop from engine consideration/i.test(line.replace(/\*/g,''))) { inEngineZone = false; continue; }
+
+    if (inEngineZone) {
+      const bm = line.match(/^\s*-\s+\*\*(.+?)\*\*\s*(?:—|–|-)\s*(.*)$/);
+      if (bm) {
+        const name = cleanName(bm[1]).replace(/\s+and structure extraction engine$/i, ' engine');
+        const body = bm[2];
+        const description = body.split(/;/)[0].trim();
+        const powers = [];
+        const exprM = body.match(/expressions?:\s*([^;]+)/i);
+        if (exprM) {
+          exprM[1].split(/,/).forEach(p => {
+            const nm = cleanName(p.split('(')[0]);
+            if (nm) powers.push(nm);
+          });
+        }
+        if (name) out.push({ name, description, powers });
+      }
+    }
+  }
+  // de-dup engine names
+  const seen = new Set();
+  return out.filter(e => { const k = e.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+// For each engine, add it to uses: of every product it "powers" (if resolvable).
+function wireEngineUses(records, engineDefs, resolver) {
+  const recByName = new Map(records.map(r => [r.name.toLowerCase(), r]));
+  for (const e of engineDefs) {
+    for (const p of (e.powers || [])) {
+      const canonical = resolver(p);
+      if (!canonical) continue;
+      const target = recByName.get(canonical.toLowerCase());
+      if (!target || target.kind === 'engine') continue;
+      if (!target.uses.includes(e.name)) target.uses.push(e.name);
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   MD GENERATION
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+function buildFrontMatter(rec) {
+  const fm = { name: rec.name, type: rec.type, doc_level: rec.doc_level, state: rec.state };
+  if (rec.state === 'absorbed' && rec.absorbed_by) fm.absorbed_by = rec.absorbed_by;
+  if (rec.doc_level !== 'spark') {
+    fm.focus = !!rec.focus;
+    fm.try_it = !!rec.try_it;
+    fm.map_it = !!rec.map_it;
+    fm.todoist = false;
+  }
+  fm.created_date = TODAY;
+  fm.modified_date = TODAY;
+  if (rec.uses && rec.uses.length) fm.uses = rec.uses.slice();
+  if (rec.synergies && rec.synergies.length) fm.synergies = rec.synergies.slice();
+  if (rec.actions && rec.actions.length) {
+    fm.actions = rec.actions.map((a, i) => ({
+      description: a.description, type: a.type, state: a.state || 'open', position: i + 1,
+    }));
+  }
+  return fm;
+}
+
+function buildBody(rec) {
+  const p = rec.prov;
+  const L = [];
+
+  // Absorbed banner
+  if (rec.state === 'absorbed') {
+    const by = rec.absorbed_by || '[FILL: absorbing idea]';
+    L.push(`> **Absorbed** — This concept was absorbed into ${by} on ${TODAY}.`);
+    if (rec.absorbed_by) L.push(`> See ${MQ.nameToSlug(rec.absorbed_by)}.md for current development.`);
+    L.push('');
+  }
+
+  if (rec.doc_level === 'spark') {
+    if (rec.kind === 'engine') {
+      L.push(p.coreSentence || '[FILL: one sentence description]');
+      if (p.powers && p.powers.length) { L.push(''); L.push(`Powers: ${p.powers.join(', ')}.`); }
+      L.push('');
+      L.push('> ⚠️ Engine relationship is a hypothesis from description-level matching — not validated through builds. See aggregate Section 1 distrust notice.');
+      L.push('');
+    } else {
+      L.push(p.coreSentence || p.leadProse || '[FILL: one sentence description]');
+      L.push('');
+    }
+  } else {
+    // capsule / brief
+    L.push(`## Idea Capsule — ${TODAY}`);
+    L.push('');
+    L.push(`**Name** — ${rec.name}`);
+    L.push('');
+    L.push(`**One Phrase** — ${p.onePhrase || '[FILL: one phrase — the sharpest distillation]'}`);
+    L.push('');
+    L.push(`**Core Sentence** — ${p.coreSentence || '[FILL: who does what they couldn\'t before]'}`);
+    L.push('');
+    if (rec.onePara && rec.onePara.trim()) {
+      L.push(`**One Paragraph** — ${rec.onePara.trim()}`);
+    } else {
+      const hookHint = p.hook ? `hook: "${p.hook}"; ` : '';
+      L.push(`**One Paragraph** — [FILL: one paragraph pitch — ${hookHint}expand core sentence, close with why now]`);
+    }
+    L.push('');
+    L.push(`**Key Insights**`);
+    L.push(formatBullets(p.keyInsights) || '- [FILL: 2–5 sharpest insights]');
+    L.push('');
+    L.push(emitLabeled('User', p.user, '[FILL: who specifically]'));
+    L.push('');
+    L.push(emitLabeled('Model', p.model, '[FILL: how it makes money or creates value]'));
+    L.push('');
+    L.push(`**Why It's Real**`);
+    L.push(formatBullets(p.whyReal) || '- [FILL: evidence, analogies, market signal]');
+    L.push('');
+    L.push(emitLabeled('Flags', p.flags, '[FILL: honest concerns]'));
+    L.push('');
+    L.push(`**Synergy**`);
+    L.push(formatBullets(p.synergy) || '[FILL: named connections to other ideas and why]');
+    L.push('');
+
+    if (rec.doc_level === 'brief') {
+      L.push('---');
+      L.push('');
+      L.push(`## Brief — ${TODAY}`);
+      L.push('');
+      const bits = [];
+      if (p.currentStage) bits.push(`**Current stage** — ${p.currentStage}`);
+      if (p.enginePotential) bits.push(`**Engine potential** — ${p.enginePotential}`);
+      L.push(bits.length ? bits.join('\n\n') : '[FILL: working notes, signals, open threads]');
+      L.push('');
+    }
+  }
+
+  // Logs
+  L.push('---'); L.push('');
+  L.push('## Action Log'); L.push('');
+  if (p.prototypeResult) { L.push(`**${TODAY}** — Prototype result: ${p.prototypeResult}`); L.push(''); }
+  L.push('---'); L.push('');
+  L.push('## Decision Log'); L.push('');
+  // Absorption entries for any idea absorbed INTO this concept (drafted per
+  // schema state-transition behavior; derived live so edits/skips are honored).
+  if (typeof App !== 'undefined' && App.records) {
+    App.records
+      .filter(r => !r.skip && r.state === 'absorbed' && r.absorbed_by &&
+                   r.absorbed_by.toLowerCase() === rec.name.toLowerCase())
+      .forEach(a => {
+        L.push(`**${TODAY}** — ${a.name} absorbed into this concept. See ${MQ.nameToSlug(a.name)}.md for full history.`);
+        L.push('');
+      });
+  }
+  if (p.recommendation || rec.state) {
+    const verdict = (p.recommendation || '').split('—')[0].replace(/\*/g, '').trim() || rec.state;
+    L.push(`**${TODAY}** — Migrated from triage aggregate. Verdict: ${verdict}.`);
+    L.push('');
+  }
+  L.push('---'); L.push('');
+  L.push('## Open Questions Log'); L.push('');
+
+  return L.join('\n');
+}
+
+// Emit a "**Label** — value" field inline, or as a label line + bullets when the
+// source value is itself a list (avoids the "— - Primary" artifact).
+function emitLabeled(label, value, fallback) {
+  const v = (value || '').trim();
+  if (!v) return `**${label}** — ${fallback}`;
+  if (/\n/.test(v) || /^[-*]\s/.test(v)) return `**${label}**\n${formatBullets(v)}`;
+  return `**${label}** — ${v}`;
+}
+
+// Ensure a multi-line value that looks like a list renders as markdown bullets.
+function formatBullets(text) {
+  if (!text) return '';
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  return lines.map(l => /^[-*]\s+/.test(l) ? l.replace(/^\*\s+/, '- ') : `- ${l}`).join('\n');
+}
+
+function generateFileContent(rec) {
+  const fm = buildFrontMatter(rec);
+  const yaml = MQ.serializeYAML(fm);
+  // round-trip validate
+  const roundTrip = MQ.parseYAML(yaml);
+  if (!MQ.yamlRoundTripValid(fm, roundTrip)) {
+    throw new Error('YAML round-trip validation failed');
+  }
+  const body = buildBody(rec);
+  return `---\n${yaml}\n---\n${body}\n`;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   FILE I/O
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+async function pickFile(which) {
+  const [handle] = await window.showOpenFilePicker({
+    types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'], 'text/plain': ['.md', '.txt'] } }],
+  });
+  const file = await handle.getFile();
+  const text = await file.text();
+  if (which === 'aggregate') { App.aggregateText = text; App.aggregateName = file.name; }
+  else { App.indexText = text; App.indexName = file.name; }
+  render();
+}
+
+async function pickFolder() {
+  const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+  App.folderHandle = handle;
+  App.folderName = handle.name;
+  render();
+}
+
+async function fileExists(name) {
+  try { await App.folderHandle.getFileHandle(name); return true; }
+  catch (e) { return false; }
+}
+
+async function writeFile(name, content) {
+  const fh = await App.folderHandle.getFileHandle(name, { create: true });
+  const w = await fh.createWritable();
+  await w.write(content);
+  await w.close();
+}
+
+async function runGeneration(mode) {
+  // mode: 'overwrite' | 'skip'
+  const results = { written: [], skipped: [], failed: [] };
+  const active = App.records.filter(r => !r.skip);
+
+  for (const rec of active) {
+    const name = rec.slug + '.md';
+    try {
+      if (mode === 'skip' && await fileExists(name)) { results.skipped.push(name); continue; }
+      const content = generateFileContent(rec);
+      await writeFile(name, content);
+      results.written.push(name);
+    } catch (e) {
+      results.failed.push({ name, error: e.message });
+      console.error('Failed to write', name, e);
+    }
+  }
+
+  // empty _queue.json (create if missing)
+  try {
+    if (!(await fileExists('_queue.json'))) {
+      await writeFile('_queue.json', JSON.stringify({ updated: TODAY, queue: [] }, null, 2) + '\n');
+      results.written.push('_queue.json');
+    }
+  } catch (e) {
+    results.failed.push({ name: '_queue.json', error: e.message });
+  }
+
+  App.genResults = results;
+  App.step = 'generated';
+  render();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PASS 2 — AUDIT + _review.md
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+async function readAllMDs() {
+  const mds = [];
+  for await (const [name, handle] of App.folderHandle.entries()) {
+    if (handle.kind !== 'file') continue;
+    if (!name.endsWith('.md')) continue;
+    if (name.startsWith('_')) continue; // _system.md, _review.md
+    if (/^(build|compilation)-.+\.md$/.test(name)) continue; // external artifacts, not concept MDs
+    const file = await handle.getFile();
+    const text = await file.text();
+    const parsed = MQ.parseMarkdownFile(text);
+    mds.push({ name, frontMatter: parsed.frontMatter || {}, body: parsed.body || '', raw: text });
+  }
+  return mds;
+}
+
+function parseIndexNames(indexText) {
+  if (!indexText) return [];
+  // Only the idea tables (Full / Mini / Infrastructure / Advanced) precede the
+  // Bucket Summary. Later tables (buckets, engines, threads) are not idea names.
+  indexText = indexText.split(/^##\s+Bucket Summary/mi)[0];
+  const names = new Set();
+  indexText.split(/\r?\n/).forEach(line => {
+    if (!/^\|/.test(line)) return;
+    const cells = line.split('|').map(c => c.trim());
+    // Name column is the first cell containing a bold token.
+    for (const c of cells) {
+      const m = c.match(/\*\*(.+?)\*\*/);
+      if (m) {
+        const n = cleanName(m[1]);
+        if (n && n !== '#' && !/^name$/i.test(n)) names.add(n);
+        break;
+      }
+    }
+  });
+  return [...names];
+}
+
+async function runAudit() {
+  const mds = await readAllMDs();
+  const blocking = [], nonblocking = [], suggested = [];
+  const clean = [];
+
+  const nameToMd = new Map();
+  mds.forEach(m => { if (m.frontMatter.name) nameToMd.set(m.frontMatter.name, m); });
+  const lowerNames = new Set([...nameToMd.keys()].map(n => n.toLowerCase()));
+
+  // helper: does body contain a Decision Log mention of X?
+  const decisionLogMentions = (md, term) => {
+    const idx = md.body.indexOf('## Decision Log');
+    if (idx === -1) return false;
+    const seg = md.body.slice(idx, md.body.indexOf('## Open Questions Log', idx) + 1 || undefined);
+    return seg.toLowerCase().includes(term.toLowerCase());
+  };
+
+  // name uniqueness
+  const counts = {};
+  mds.forEach(m => { const n = m.frontMatter.name; if (n) counts[n] = (counts[n]||0)+1; });
+  Object.entries(counts).forEach(([n, c]) => {
+    if (c > 1) blocking.push(`Duplicate name detected: "${n}" appears in ${c} files`);
+  });
+
+  let focusCount = 0;
+
+  for (const md of mds) {
+    const fm = md.frontMatter;
+    const fileGaps = [];
+
+    // One Paragraph FILL
+    if (/\*\*One Paragraph\*\* — \[FILL/i.test(md.body)) {
+      nonblocking.push(`${md.name} — One Paragraph is a [FILL:] placeholder`);
+    }
+    // generic FILL scan (excluding One Paragraph already counted)
+    const fillMatches = (md.body.match(/\[FILL:[^\]]*\]/g) || []);
+    const otherFills = fillMatches.filter(f => !/one paragraph/i.test(f));
+    if (otherFills.length) {
+      nonblocking.push(`${md.name} — ${otherFills.length} unfilled [FILL:] placeholder(s) in body`);
+    }
+
+    // absorbed without absorbed_by
+    if (fm.state === 'absorbed' && !fm.absorbed_by) {
+      blocking.push(`${md.name} — state: absorbed but absorbed_by is empty`);
+    }
+    // absorbing MD missing Decision Log entry
+    if (fm.state === 'absorbed' && fm.absorbed_by) {
+      const absorbingMd = nameToMd.get(fm.absorbed_by);
+      if (!absorbingMd) {
+        blocking.push(`${md.name} — absorbed_by "${fm.absorbed_by}" resolves to no MD`);
+      } else if (!decisionLogMentions(absorbingMd, fm.name)) {
+        nonblocking.push(`${absorbingMd.name} Decision Log has no absorption entry for ${fm.name}. Add?`);
+      }
+    }
+
+    // uses resolution
+    (fm.uses || []).forEach(u => {
+      if (!lowerNames.has(String(u).toLowerCase())) {
+        blocking.push(`${md.name} — uses: "${u}" resolves to no MD`);
+      }
+    });
+    // synergies resolution + bidirectionality
+    (fm.synergies || []).forEach(s => {
+      if (!lowerNames.has(String(s).toLowerCase())) {
+        nonblocking.push(`${md.name} — synergies: "${s}" resolves to no MD`);
+      } else {
+        const other = nameToMd.get(String(s)) || [...nameToMd.values()].find(m => m.frontMatter.name && m.frontMatter.name.toLowerCase() === String(s).toLowerCase());
+        if (other) {
+          const back = (other.frontMatter.synergies || []).some(x => String(x).toLowerCase() === fm.name.toLowerCase());
+          if (!back) nonblocking.push(`${md.name} lists ${s} in synergies: but ${other.name} does not list ${fm.name}. Add?`);
+        }
+      }
+    });
+
+    if (fm.focus === true) focusCount++;
+
+    // doc_level richness suggestion
+    if (fm.doc_level === 'spark' && fm.type === 'concept') {
+      suggested.push(`${md.name} — spark level; consider expanding to capsule when time permits`);
+    }
+
+    if (fillMatches.length === 0 && (fm.state !== 'absorbed' || fm.absorbed_by)) {
+      // candidate clean (final filter after loops below would be ideal; approximate)
+    }
+  }
+
+  if (focusCount > 2) {
+    suggested.push(`${focusCount} concepts marked focus: true — recommended limit is 2`);
+  }
+
+  // Index reconciliation
+  if (App.indexText) {
+    const indexNames = parseIndexNames(App.indexText);
+    const generatedNames = new Set([...lowerNames]);
+    const aliasResolves = (n) => generatedNames.has(n.toLowerCase()) || !!App.aliasMap[n.toLowerCase()];
+    indexNames.forEach(n => {
+      if (!aliasResolves(n)) suggested.push(`Index lists "${n}" but no MD was generated for it. Intentional?`);
+    });
+  }
+
+  // clean = MDs with no gap flagged
+  const flaggedFiles = new Set();
+  [...blocking, ...nonblocking].forEach(line => {
+    const m = line.match(/^([a-z0-9-]+\.md)/);
+    if (m) flaggedFiles.add(m[1]);
+  });
+  mds.forEach(m => { if (!flaggedFiles.has(m.name)) clean.push(m.name); });
+
+  const review = buildReviewMd({ total: mds.length, blocking, nonblocking, suggested, cleanCount: clean.length });
+  App.reviewText = review;
+  try {
+    await writeFile('_review.md', review);
+  } catch (e) {
+    console.error('Failed to write _review.md', e);
+  }
+  App.step = 'audited';
+  render();
+}
+
+function buildReviewMd({ total, blocking, nonblocking, suggested, cleanCount }) {
+  const sec = (title, items, blurb) => {
+    let s = `## ${title}\n\n`;
+    if (blurb) s += blurb + '\n\n';
+    if (items.length === 0) s += '_None._\n';
+    else s += items.map(i => `- ${i}`).join('\n') + '\n';
+    return s + '\n---\n\n';
+  };
+  return `# _review.md — Matterqueue Migration Gap Report
+*Generated: ${TODAY}*
+*Pass 2 audit of ${total} MDs*
+
+---
+
+${sec('❌ Blocking — fix before viewer build', blocking, 'Items that will cause viewer errors, broken references, or silent data loss. Fix these before opening the viewer.')}${sec('⚠️ Non-blocking — review before first use', nonblocking, 'Incomplete but won\'t break the viewer. Gaps in content or coverage.')}${sec('💡 Suggested — optional improvements', suggested, 'Technically complete but could be richer.')}## ✅ Confirmed clean
+
+${cleanCount} MDs passed all checks with no gaps.
+
+---
+
+*Delete this file when all ❌ and ⚠️ items are resolved.*
+`;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   RENDERING
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function renderSteps() {
+  const steps = [
+    { id: 'landing', label: '1 · Load' },
+    { id: 'review', label: '2 · Review' },
+    { id: 'generated', label: '3 · Generate' },
+    { id: 'audited', label: '4 · Audit' },
+  ];
+  const order = ['landing', 'review', 'generated', 'audited'];
+  const curIdx = order.indexOf(App.step);
+  document.getElementById('steps').innerHTML = steps.map((s, i) => {
+    const cls = i === curIdx ? 'step active' : (i < curIdx ? 'step done' : 'step');
+    return `<span class="${cls}">${s.label}</span>` + (i < steps.length - 1 ? '<span class="sep">›</span>' : '');
+  }).join('');
+}
+
+function render() {
+  renderSteps();
+  if (App.step === 'landing') return renderLanding();
+  if (App.step === 'review') return renderReview();
+  if (App.step === 'generated') return renderGenerated();
+  if (App.step === 'audited') return renderAudited();
+}
+
+function renderLanding() {
+  const aggOk = !!App.aggregateText;
+  const folderOk = !!App.folderHandle;
+  $main.innerHTML = `
+    <h2 class="section-title">Load sources</h2>
+    <p class="subtle" style="margin-bottom:16px;">Aggregate-driven migration. The aggregate is the spine; the index is used only for Pass-2 reconciliation. One Paragraph is written as a <span class="mono">[FILL:]</span> placeholder for every idea.</p>
+
+    <div class="picker-card">
+      <div>
+        <div class="label">Idea Capsule Aggregate <span class="req">required</span></div>
+        <div class="status ${aggOk ? 'ok' : ''}">${aggOk ? '✓ ' + esc(App.aggregateName) : 'not loaded'}</div>
+      </div>
+      <button class="btn" data-act="pick-aggregate">Choose file…</button>
+    </div>
+
+    <div class="picker-card">
+      <div>
+        <div class="label">Idea Capsule Index <span class="opt">optional — reconciliation only</span></div>
+        <div class="status ${App.indexText ? 'ok' : ''}">${App.indexText ? '✓ ' + esc(App.indexName) : 'not loaded'}</div>
+      </div>
+      <button class="btn" data-act="pick-index">Choose file…</button>
+    </div>
+
+    <div class="picker-card">
+      <div>
+        <div class="label">Output folder <span class="req">required</span></div>
+        <div class="status ${folderOk ? 'ok' : ''}">${folderOk ? '✓ ' + esc(App.folderName) + '/' : 'not selected'}</div>
+      </div>
+      <button class="btn" data-act="pick-folder">Choose folder…</button>
+    </div>
+
+    <div class="notice">Chrome only — File System Access API. The tool reads the aggregate and index into memory; neither is modified. Use a scratch folder for a dry run before pointing it at <span class="mono">venture-portfolio/</span>.</div>
+
+    <div class="btn-row" style="margin-top:18px;">
+      <button class="btn primary" data-act="parse" ${aggOk ? '' : 'disabled'}>Parse aggregate →</button>
+    </div>
+  `;
+}
+
+function renderReview() {
+  const ideas = App.records.filter(r => r.kind === 'idea');
+  const engines = App.records.filter(r => r.kind === 'engine');
+
+  $main.innerHTML = `
+    <h2 class="section-title">Review &amp; correct — ${ideas.length} ideas, ${engines.length} engines</h2>
+    <p class="subtle" style="margin-bottom:14px;">Everything is pre-filled and pre-confirmed. Scan, correct outliers, uncheck any to skip. <span class="mono">[FILL:]</span> placeholders and synergy/uses gaps are caught again in the Pass-2 report.</p>
+    <div id="cards-ideas">${ideas.map(r => cardHTML(r)).join('')}</div>
+    <h2 class="section-title">Engines <span class="subtle mono" style="font-size:11px;">(created from aggregate Section 1 — hypotheses, distrust-flagged)</span></h2>
+    <div id="cards-engines">${engines.map(r => cardHTML(r)).join('')}</div>
+    <div id="actionbar">
+      <div id="progress-readout"></div>
+      <div class="btn-row">
+        <button class="btn ghost" data-act="back-landing">← Back</button>
+        <button class="btn primary" data-act="confirm-generate">Confirm All &amp; Generate →</button>
+      </div>
+    </div>
+  `;
+  updateProgressReadout();
+}
+
+function cardHTML(rec) {
+  const idx = App.records.indexOf(rec);
+  const typeOpts = ['concept', 'engine', 'workflow'].map(o => `<option ${rec.type===o?'selected':''}>${o}</option>`).join('');
+  const docOpts = ['spark', 'capsule', 'brief', 'compilation'].map(o => `<option ${rec.doc_level===o?'selected':''}>${o}</option>`).join('');
+  const stateOpts = ['active', 'parked', 'absorbed', 'retired'].map(o => `<option ${rec.state===o?'selected':''}>${o}</option>`).join('');
+
+  const tagHTML = (arr, kind) => arr.map((n, i) => {
+    const resolved = App.nameSet.has(String(n).toLowerCase()) || !!App.aliasMap[String(n).toLowerCase()];
+    return `<span class="tag ${resolved ? '' : 'unresolved'}">${esc(n)}<span class="x" data-act="rm-${kind}" data-idx="${idx}" data-i="${i}">×</span></span>`;
+  }).join('');
+
+  const actionsHTML = rec.actions.map((a, i) => `
+    <div class="action-row">
+      <input value="${esc(a.description)}" data-act="act-desc" data-idx="${idx}" data-i="${i}">
+      <select data-act="act-type" data-idx="${idx}" data-i="${i}">
+        ${['task','prototype','research','decision'].map(o => `<option ${a.type===o?'selected':''}>${o}</option>`).join('')}
+      </select>
+      <button class="btn ghost" data-act="act-rm" data-idx="${idx}" data-i="${i}" title="remove">×</button>
+    </div>`).join('');
+
+  const prov = rec.prov;
+  const previewLines = Object.entries(prov)
+    .filter(([k, v]) => v && (typeof v === 'string') && k !== 'leadProse')
+    .map(([k, v]) => `<span class="k">${k}:</span> ${esc(v.length > 400 ? v.slice(0,400)+'…' : v)}`).join('\n\n');
+
+  const oneParaRow = (rec.kind === 'idea' && rec.doc_level !== 'spark') ? `
+    <div class="card-row">
+      <div class="field grow">
+        <label>One Paragraph ${rec.onePara ? '— drafted, review &amp; edit' : '— no draft; will write [FILL:]'}</label>
+        <textarea rows="4" data-act="f-onepara" data-idx="${idx}" placeholder="[FILL:] placeholder will be written — type a paragraph to override">${esc(rec.onePara)}</textarea>
+      </div>
+    </div>` : '';
+
+  const capNote = rec.kind === 'idea'
+    ? `<div class="cap-note">Other fields absent in source become <span class="mono">[FILL:]</span> in the capsule body.</div>`
+    : `<div class="cap-note">Engine spark MD with distrust note. Wired into <span class="mono">uses:</span> of: ${esc((prov.powers||[]).join(', ') || '—')}.</div>`;
+
+  return `
+  <div class="card ${rec.kind === 'engine' ? 'engine' : ''} ${rec.skip ? 'skipped' : ''}" data-card="${idx}">
+    <div class="card-head">
+      <input type="checkbox" ${rec.skip ? '' : 'checked'} data-act="toggle-skip" data-idx="${idx}" title="include in run">
+      <span class="name">${esc(rec.name)}</span>
+      <span class="slug">${esc(rec.slug)}.md</span>
+      <span class="kindtag ${rec.kind === 'engine' ? 'engine' : ''}">${rec.kind}</span>
+      <span class="spacer"></span>
+    </div>
+
+    <div class="card-row">
+      <div class="field"><label>type</label><select data-act="f-type" data-idx="${idx}">${typeOpts}</select></div>
+      <div class="field"><label>doc_level</label><select data-act="f-doc" data-idx="${idx}">${docOpts}</select></div>
+      <div class="field"><label>state</label><select data-act="f-state" data-idx="${idx}">${stateOpts}</select></div>
+      <div class="field grow" data-absorbed="${idx}" style="${rec.state==='absorbed'?'':'display:none'}">
+        <label>absorbed_by</label><input value="${esc(rec.absorbed_by)}" data-act="f-absorbed" data-idx="${idx}">
+      </div>
+    </div>
+
+    <div class="card-row">
+      <div class="field grow">
+        <label>uses</label>
+        <div class="tags" data-tags="uses-${idx}">${tagHTML(rec.uses, 'uses')}<input class="tag-input" placeholder="+ engine/workflow" data-act="add-uses" data-idx="${idx}"></div>
+      </div>
+    </div>
+    <div class="card-row">
+      <div class="field grow">
+        <label>synergies</label>
+        <div class="tags" data-tags="syn-${idx}">${tagHTML(rec.synergies, 'syn')}<input class="tag-input" placeholder="+ idea name" data-act="add-syn" data-idx="${idx}"></div>
+      </div>
+    </div>
+    ${oneParaRow}
+
+    ${rec.kind === 'idea' ? `
+    <div class="card-row">
+      <div class="field grow">
+        <label>actions (from Next Step)</label>
+        <div class="actions-list">${actionsHTML}</div>
+        <button class="btn ghost" style="align-self:flex-start;margin-top:6px;" data-act="act-add" data-idx="${idx}">+ add action</button>
+      </div>
+    </div>
+    <div class="card-row checks">
+      <label><input type="checkbox" ${rec.try_it?'checked':''} data-act="f-tryit" data-idx="${idx}"> try_it</label>
+      <label><input type="checkbox" ${rec.map_it?'checked':''} data-act="f-mapit" data-idx="${idx}"> map_it</label>
+      <label><input type="checkbox" ${rec.focus?'checked':''} data-act="f-focus" data-idx="${idx}"> focus</label>
+    </div>` : ''}
+
+    ${capNote}
+    <div class="preview-toggle" data-act="toggle-preview" data-idx="${idx}">▸ parsed fields (${rec.fieldsSeen.length})</div>
+    <div class="preview" data-preview="${idx}">${previewLines || '<span class="subtle">no recognized fields extracted</span>'}</div>
+  </div>`;
+}
+
+function updateProgressReadout() {
+  const el = document.getElementById('progress-readout');
+  if (!el) return;
+  const total = App.records.length;
+  const skipped = App.records.filter(r => r.skip).length;
+  const ready = total - skipped;
+  el.innerHTML = `<b>${ready}</b> ready · ${skipped} skipped · ${total} total`;
+}
+
+function renderGenerated() {
+  const r = App.genResults;
+  const fileLines = [
+    ...r.written.map(n => `<div class="logline ok">✅ ${esc(n)}</div>`),
+    ...r.skipped.map(n => `<div class="logline">⏭️ ${esc(n)} (skipped — already exists)</div>`),
+    ...r.failed.map(f => `<div class="logline fail">❌ ${esc(f.name)} — ${esc(f.error)}</div>`),
+  ].join('');
+
+  const failWarn = r.failed.length
+    ? `<div class="notice warn">${r.failed.length} file(s) failed to write. Their changes were not saved. Check cross-file references before continuing.</div>` : '';
+
+  $main.innerHTML = `
+    <h2 class="section-title">Generated</h2>
+    <p class="subtle" style="margin-bottom:12px;"><b>${r.written.length}</b> written · ${r.skipped.length} skipped · ${r.failed.length} failed → <span class="mono">${esc(App.folderName)}/</span></p>
+    ${failWarn}
+    <div style="margin:12px 0;">${fileLines}</div>
+    <div class="btn-row" style="margin-top:18px;">
+      <button class="btn primary" data-act="run-audit">Run Pass 2 audit →</button>
+      <button class="btn ghost" data-act="back-review">← Back to review</button>
+    </div>
+  `;
+}
+
+function renderAudited() {
+  $main.innerHTML = `
+    <h2 class="section-title">Pass 2 — gap report</h2>
+    <p class="subtle" style="margin-bottom:12px;"><span class="mono">_review.md</span> written to <span class="mono">${esc(App.folderName)}/</span>. Resolve ❌ and ⚠️ items before opening the viewer.</p>
+    <pre class="report">${esc(App.reviewText)}</pre>
+    <div class="btn-row" style="margin-top:18px;">
+      <button class="btn ghost" data-act="restart">Start over</button>
+    </div>
+  `;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   MODAL
+   ══════════════════════════════════════════════════════════════════════════════ */
+function showModal(html) {
+  document.getElementById('modal').innerHTML = html;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function hideModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+
+async function confirmGenerate() {
+  const active = App.records.filter(r => !r.skip);
+  const slugs = active.map(r => r.slug + '.md');
+  let existing = 0;
+  for (const s of slugs) { if (await fileExists(s)) existing++; }
+
+  const existingNote = existing > 0
+    ? `<p class="notice warn" style="margin:0 0 16px;"><b>${existing}</b> of these MD files already exist in the folder.</p>` : '';
+
+  showModal(`
+    <h3>Generate ${active.length} MDs?</h3>
+    ${existingNote}
+    <p>Writing to <span class="mono">${esc(App.folderName)}/</span>. ${App.records.length - active.length} skipped. An empty <span class="mono">_queue.json</span> is created if missing.</p>
+    <div class="btn-row">
+      <button class="btn ghost" data-act="modal-cancel">Cancel</button>
+      ${existing > 0 ? '<button class="btn" data-act="gen-skip">Skip existing</button>' : ''}
+      <button class="btn primary" data-act="gen-overwrite">${existing > 0 ? 'Overwrite all' : 'Generate'}</button>
+    </div>
+  `);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   EVENT DELEGATION
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+document.addEventListener('click', async (e) => {
+  const t = e.target.closest('[data-act]');
+  if (!t) return;
+  const act = t.dataset.act;
+  const idx = t.dataset.idx != null ? parseInt(t.dataset.idx, 10) : null;
+  const i = t.dataset.i != null ? parseInt(t.dataset.i, 10) : null;
+  const rec = idx != null ? App.records[idx] : null;
+
+  try {
+    switch (act) {
+      case 'pick-aggregate': await pickFile('aggregate'); break;
+      case 'pick-index': await pickFile('index'); break;
+      case 'pick-folder': await pickFolder(); break;
+      case 'parse':
+        App.records = parseAggregate(App.aggregateText);
+        App.step = 'review';
+        render();
+        break;
+      case 'back-landing': App.step = 'landing'; render(); break;
+      case 'back-review': App.step = 'review'; render(); break;
+      case 'confirm-generate':
+        if (!App.folderHandle) { alert('Choose an output folder first (go back to Load).'); break; }
+        await confirmGenerate();
+        break;
+      case 'modal-cancel': hideModal(); break;
+      case 'gen-skip': hideModal(); await runGeneration('skip'); break;
+      case 'gen-overwrite': hideModal(); await runGeneration('overwrite'); break;
+      case 'run-audit': await runAudit(); break;
+      case 'restart': location.reload(); break;
+      case 'toggle-preview': {
+        const pv = document.querySelector(`[data-preview="${idx}"]`);
+        if (pv) pv.classList.toggle('open');
+        break;
+      }
+      case 'toggle-skip':
+        rec.skip = !t.checked; // checkbox already toggled
+        document.querySelector(`[data-card="${idx}"]`).classList.toggle('skipped', rec.skip);
+        updateProgressReadout();
+        break;
+      case 'rm-uses': rec.uses.splice(i, 1); rerenderCard(idx); break;
+      case 'rm-syn': rec.synergies.splice(i, 1); rerenderCard(idx); break;
+      case 'act-rm': rec.actions.splice(i, 1); rerenderCard(idx); break;
+      case 'act-add':
+        rec.actions.push({ description: '', type: 'task', state: 'open', position: rec.actions.length + 1 });
+        rerenderCard(idx);
+        break;
+    }
+  } catch (err) {
+    if (err && err.name === 'AbortError') return; // user cancelled a picker
+    console.error(err);
+    alert('Error: ' + (err && err.message ? err.message : err));
+  }
+});
+
+// input/change handlers
+document.addEventListener('change', (e) => {
+  const t = e.target.closest('[data-act]');
+  if (!t) return;
+  const idx = t.dataset.idx != null ? parseInt(t.dataset.idx, 10) : null;
+  const i = t.dataset.i != null ? parseInt(t.dataset.i, 10) : null;
+  const rec = idx != null ? App.records[idx] : null;
+  if (!rec) return;
+
+  switch (t.dataset.act) {
+    case 'f-type': rec.type = t.value; break;
+    case 'f-doc': rec.doc_level = t.value; break;
+    case 'f-state':
+      rec.state = t.value;
+      { const ab = document.querySelector(`[data-absorbed="${idx}"]`); if (ab) ab.style.display = (t.value === 'absorbed') ? '' : 'none'; }
+      break;
+    case 'f-absorbed': rec.absorbed_by = t.value; break;
+    case 'f-onepara': rec.onePara = t.value; break;
+    case 'f-tryit': rec.try_it = t.checked; break;
+    case 'f-mapit': rec.map_it = t.checked; break;
+    case 'f-focus': rec.focus = t.checked; break;
+    case 'act-desc': rec.actions[i].description = t.value; break;
+    case 'act-type': rec.actions[i].type = t.value; break;
+  }
+});
+
+// Enter-to-add for tag inputs
+document.addEventListener('keydown', (e) => {
+  const t = e.target.closest('[data-act]');
+  if (!t || e.key !== 'Enter') return;
+  const idx = t.dataset.idx != null ? parseInt(t.dataset.idx, 10) : null;
+  const rec = idx != null ? App.records[idx] : null;
+  if (!rec) return;
+  if (t.dataset.act === 'add-uses' || t.dataset.act === 'add-syn') {
+    e.preventDefault();
+    const val = t.value.trim();
+    if (val) {
+      const arr = t.dataset.act === 'add-uses' ? rec.uses : rec.synergies;
+      if (!arr.includes(val)) arr.push(val);
+      rerenderCard(idx);
+    }
+  }
+});
+
+function rerenderCard(idx) {
+  const rec = App.records[idx];
+  const el = document.querySelector(`[data-card="${idx}"]`);
+  if (el) el.outerHTML = cardHTML(rec);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   BOOT
+   ══════════════════════════════════════════════════════════════════════════════ */
+if (!window.MQ) {
+  $main.innerHTML = '<div class="notice warn">matterqueue-core.js failed to load. Place this file next to matterqueue-core.js and open it directly in Chrome.</div>';
+} else if (!window.showDirectoryPicker) {
+  $main.innerHTML = '<div class="notice warn">File System Access API unavailable. Use Chrome (or a Chromium browser).</div>';
+} else {
+  render();
+}
+</script>
+</body>
+</html>

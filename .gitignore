@@ -4,3 +4,4 @@ test-results/
 .playwright/
 .DS_Store
 **/.DS_Store
+migration-run/

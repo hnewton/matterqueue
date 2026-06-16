@@ -296,6 +296,50 @@ function buildMockFSScript(files) {
 
 // ─── TEST HELPERS ────────────────────────────────────────────────────────────
 
+// Capsule in the migration tool's output format: blank lines between fields.
+// Used to guard against the renderMarkdown paragraph-collapse regression where
+// blank-line-separated fields and the **Key Insights** label smushed together.
+const RENDERTEST_MD = `---
+name: Rendertest
+type: concept
+doc_level: capsule
+state: active
+focus: false
+try_it: false
+map_it: false
+todoist: false
+created_date: 2026-06-16
+modified_date: 2026-06-16
+---
+## Idea Capsule — 2026-06-16
+
+**Name** — Rendertest
+
+**One Phrase** — RENDER_ONE_PHRASE marker
+
+**Core Sentence** — RENDER_CORE marker sentence.
+
+**One Paragraph** — RENDER_PARA marker paragraph text.
+
+**Key Insights**
+- RENDER_INSIGHT_A first insight
+- RENDER_INSIGHT_B second insight
+
+**User** — RENDER_USER marker
+
+---
+
+## Action Log
+
+---
+
+## Decision Log
+
+---
+
+## Open Questions Log
+`;
+
 function standardCorpus() {
   return {
     '_system.md': SYSTEM_MD,
@@ -524,6 +568,33 @@ test.describe('2. All views render', () => {
     // Log append controls — one per log section (3 sections present in body)
     await expect(page.locator('.log-append')).toHaveCount(3);
     await expect(page.locator('.log-append-btn').first()).toBeVisible();
+  });
+
+  // Regression: blank-line-separated capsule fields (migration tool output) must
+  // render as distinct paragraphs, and the **Key Insights** label must not
+  // collapse into the One Paragraph text. Guards the renderMarkdown rewrite.
+  test('Concept Body renders blank-line-separated fields as distinct paragraphs (no smushing)', async ({ page }) => {
+    const corpus = { ...standardCorpus(), 'rendertest.md': RENDERTEST_MD };
+    await openFolderAndWait(page, corpus);
+    await openConcept(page, 'Rendertest');
+    await page.click('[data-subtab="body"]');
+    await expect(page.locator('#subtab-body')).not.toHaveClass(/hidden/, { timeout: 5000 });
+
+    const body = page.locator('.body-content');
+
+    // Each capsule field is its own paragraph — the One Phrase paragraph must not
+    // swallow the Core Sentence or One Paragraph that follow it.
+    const onePhrasePara = body.locator('p', { hasText: 'RENDER_ONE_PHRASE' });
+    await expect(onePhrasePara).toHaveCount(1);
+    await expect(onePhrasePara).not.toContainText('RENDER_CORE');
+    await expect(onePhrasePara).not.toContainText('RENDER_PARA');
+
+    // The Key Insights label must not collapse into the One Paragraph text...
+    const paraPara = body.locator('p', { hasText: 'RENDER_PARA' });
+    await expect(paraPara).not.toContainText('Key Insights');
+    // ...it is its own paragraph, and its bullets render as a list.
+    await expect(body.locator('p', { hasText: 'Key Insights' })).toHaveCount(1);
+    await expect(body.locator('ul li', { hasText: 'RENDER_INSIGHT_A' })).toHaveCount(1);
   });
 
   test('Concept Body shows jump menu derived from body headings', async ({ page }) => {

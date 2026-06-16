@@ -1890,18 +1890,55 @@ function showConflictModal(filename) {
 // ─── MARKDOWN RENDERER ─────────────────────────────────────────────────────
 
 function renderMarkdown(md, addIds) {
-  let html = esc(md)
-    .replace(/^## (.+)$/gm, (_,h) => `<h2${addIds?' id="body-'+slugId(h)+'"':''}>${h}</h2>`)
-    .replace(/^### (.+)$/gm, (_,h) => `<h3>${h}</h3>`)
+  // Block-based: split on blank lines, render each block by type. This keeps
+  // blank-line-separated fields (Name / One Phrase / ... / Key Insights) as
+  // distinct paragraphs instead of collapsing them together.
+  const inline = (s) => esc(s)
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code>$1</code>')
-    .replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*?<\/li>\n?)+/gs, m => `<ul>${m}</ul>`)
-    .replace(/\n\n(?!<)/g, '</p><p>');
-  if (!html.startsWith('<')) html = '<p>' + html + '</p>';
-  return html;
+    .replace(/`(.+?)`/g, '<code>$1</code>');
+
+  const out = [];
+  const blocks = String(md).replace(/\r\n/g, '\n').split(/\n{2,}/);
+
+  for (const raw of blocks) {
+    const block = raw.replace(/^\n+|\n+$/g, '');
+    if (block.trim() === '') continue;
+
+    // Horizontal rule
+    if (/^(-{3,}|\*{3,})$/.test(block.trim())) { out.push('<hr>'); continue; }
+
+    const lines = block.split('\n');
+
+    // Blockquote: every non-empty line starts with ">"
+    if (lines.every(l => l.trim() === '' || /^>\s?/.test(l))) {
+      const inner = lines.filter(l => l.trim() !== '')
+        .map(l => inline(l.replace(/^>\s?/, ''))).join('<br>');
+      out.push(`<blockquote>${inner}</blockquote>`);
+      continue;
+    }
+
+    // General block: group consecutive list items into a <ul>; emit headings as
+    // their own elements; everything else accumulates into a <p> (single
+    // newlines become <br>).
+    let para = [], list = [];
+    const flushPara = () => { if (para.length) { out.push(`<p>${para.map(inline).join('<br>')}</p>`); para = []; } };
+    const flushList = () => { if (list.length) { out.push(`<ul>${list.map(li => `<li>${inline(li)}</li>`).join('')}</ul>`); list = []; } };
+
+    for (const line of lines) {
+      if (line.trim() === '') continue;
+      const li = line.match(/^[-*]\s+(.+)$/);
+      const h2 = line.match(/^##\s+(.+)$/);
+      const h3 = line.match(/^###\s+(.+)$/);
+      if (li) { flushPara(); list.push(li[1]); }
+      else if (h2) { flushPara(); flushList(); out.push(`<h2${addIds ? ` id="body-${slugId(h2[1])}"` : ''}>${inline(h2[1])}</h2>`); }
+      else if (h3) { flushPara(); flushList(); out.push(`<h3>${inline(h3[1])}</h3>`); }
+      else { flushList(); para.push(line); }
+    }
+    flushPara(); flushList();
+  }
+
+  return out.join('\n');
 }
 
 // ─── UTILITIES ─────────────────────────────────────────────────────────────
