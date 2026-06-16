@@ -2,3 +2,5 @@ node_modules/
 playwright-report/
 test-results/
 .playwright/
+.DS_Store
+**/.DS_Store
