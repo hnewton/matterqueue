@@ -1506,7 +1506,9 @@ function appendLog(filename, section, inputId) {
   // insertAfterHeading now throws on heading-not-found (belt and suspenders —
   // we already checked above, but catch in case of a race or body mutation).
   try {
-    md.body = MQ.applyBodyAppends(md.body, { [fieldMap[section]]: [entry], actionLog:[], decisionLog:[], openQuestionsLog:[] });
+    const appends = { actionLog: [], decisionLog: [], openQuestionsLog: [] };
+    appends[fieldMap[section]] = [entry];
+    md.body = MQ.applyBodyAppends(md.body, appends);
     markDirty(filename);
     input.value = '';
     renderConceptBody();
