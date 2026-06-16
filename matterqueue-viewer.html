@@ -1,0 +1,1920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Matterqueue</title>
+<style>
+/* ─── TOKENS ─────────────────────────────────────────────────────────────── */
+:root {
+  --bg:          #1C1C1E;
+  --surface:     #2C2C2E;
+  --surface2:    #383838;
+  --border:      #3A3A3C;
+  --text:        #F2EFE8;
+  --muted:       #9A9A9A;
+  --amber:       #D4A96E;
+  --sage:        #7AAF80;
+  --danger:      #C07070;
+  --purple:      #B88FC8;
+  --blue:        #7AAFC8;
+  --mono:        ui-monospace, 'SF Mono', Menlo, 'Courier New', monospace;
+  --sans:        system-ui, -apple-system, sans-serif;
+  --header-h:    44px;
+  --nav-h:       38px;
+  --radius:      4px;
+  --transition:  140ms ease;
+}
+
+/* ─── RESET ──────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13px; line-height: 1.5; }
+button { font-family: inherit; font-size: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 8px; outline: none; }
+input:focus, select:focus, textarea:focus { border-color: var(--amber); }
+a { color: var(--amber); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ─── LAYOUT ─────────────────────────────────────────────────────────────── */
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+/* ─── TOP HEADER ─────────────────────────────────────────────────────────── */
+#header {
+  height: var(--header-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg);
+  gap: 24px;
+}
+
+#logo-area { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+#logo { font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; color: var(--text); text-transform: uppercase; font-weight: normal; }
+#domain-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.06em; padding: 2px 8px; border: 1px solid var(--border); border-radius: var(--radius); }
+
+/* Mode switcher — Concepts | Actions */
+#mode-nav { display: flex; align-items: center; gap: 2px; }
+.mode-btn {
+  padding: 5px 14px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color var(--transition), background var(--transition);
+  border: 1px solid transparent;
+}
+.mode-btn:hover { color: var(--text); }
+.mode-btn.active { color: var(--text); background: var(--surface); border-color: var(--border); }
+
+/* Sync area */
+#sync-area { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+#sync-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+#sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border); transition: background var(--transition); }
+#sync-dot.dirty { background: var(--amber); animation: pulse 2.5s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+#sync-label { font-size: 11px; }
+#sync-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  transition: border-color var(--transition), color var(--transition);
+}
+#sync-btn:hover, #sync-btn.has-changes { border-color: var(--amber); color: var(--amber); }
+#sync-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+#sync-log-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+#sync-log-btn:hover { color: var(--text); border-color: var(--text); }
+
+/* ─── SUB NAV ────────────────────────────────────────────────────────────── */
+#subnav {
+  height: var(--nav-h);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 0;
+  background: var(--bg);
+}
+.subnav-tab {
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color var(--transition), border-color var(--transition);
+  white-space: nowrap;
+}
+.subnav-tab:hover { color: var(--text); }
+.subnav-tab.active { color: var(--text); border-bottom-color: var(--amber); }
+#subnav-divider { width: 1px; background: var(--border); height: 16px; margin: 0 8px; }
+
+/* ─── MAIN ───────────────────────────────────────────────────────────────── */
+#main { flex: 1; overflow-y: auto; padding: 20px 24px; }
+/* Body tab overrides: jump menu sticks, content scrolls within subtab-body */
+#view-concept { display: flex; flex-direction: column; height: 100%; }
+#subtab-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+.jump-menu-sticky {
+  flex-shrink: 0;
+}
+.body-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 24px;
+}
+
+/* ─── BANNERS ─────────────────────────────────────────────────────────────── */
+#banners { margin-bottom: 12px; display: flex; flex-direction: column; gap: 6px; }
+.banner { padding: 8px 12px; border-radius: var(--radius); font-size: 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.banner.warn { background: rgba(212,169,110,0.1); border: 1px solid rgba(212,169,110,0.3); color: var(--amber); }
+.banner.error { background: rgba(192,112,112,0.1); border: 1px solid rgba(192,112,112,0.3); color: var(--danger); }
+.banner-dismiss { flex-shrink: 0; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; }
+.banner-dismiss:hover { color: var(--text); }
+
+/* ─── LANDING ─────────────────────────────────────────────────────────────── */
+#view-landing { display: flex; align-items: center; justify-content: center; height: 100%; }
+#landing { display: flex; flex-direction: column; align-items: center; gap: 20px; }
+#landing h1 { font-family: var(--mono); font-size: 16px; letter-spacing: 0.18em; color: var(--text); font-weight: normal; }
+#landing p { color: var(--muted); font-size: 13px; }
+#open-folder-btn { padding: 9px 22px; border: 1px solid var(--amber); border-radius: var(--radius); color: var(--amber); font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; transition: background var(--transition); }
+#open-folder-btn:hover { background: rgba(212,169,110,0.08); }
+#landing-error { color: var(--danger); font-size: 12px; text-align: center; }
+
+/* ─── VIEW HEADER ─────────────────────────────────────────────────────────── */
+.view-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.view-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.view-count { color: var(--muted); font-size: 12px; margin-left: 6px; }
+
+/* ─── FILTER BAR ─────────────────────────────────────────────────────────── */
+.filter-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+.filter-group { display: flex; align-items: center; gap: 4px; }
+.filter-group-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); opacity: 0.55; margin-right: 2px; flex-shrink: 0; }
+.filter-btn { padding: 3px 10px; border: 1px solid var(--border); border-radius: 20px; font-size: 11px; color: var(--muted); cursor: pointer; transition: all var(--transition); background: none; }
+.filter-btn:hover { border-color: var(--text); color: var(--text); }
+.filter-btn.active { border-color: var(--amber); color: var(--amber); background: rgba(212,169,110,0.07); }
+.filter-separator { width: 1px; background: var(--border); height: 14px; margin: 0 4px; }
+/* Preset buttons (All/Focus) live in sub-nav — no separate CSS needed */
+
+/* ─── CONCEPT TABLE ───────────────────────────────────────────────────────── */
+.list-header {
+  display: grid;
+  grid-template-columns: 12px minmax(120px,220px) 68px 76px 80px 26px;
+  gap: 10px;
+  padding: 4px 10px 8px;
+  font-size: 10px;
+  font-family: var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+.concept-list { display: flex; flex-direction: column; gap: 1px; }
+.concept-row {
+  display: grid;
+  grid-template-columns: 12px minmax(120px,220px) 68px 76px 80px 26px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background var(--transition), border-color var(--transition);
+}
+.concept-row:hover { background: var(--surface); }
+.concept-row.dirty-row { border-color: rgba(212,169,110,0.18); }
+.concept-row.drag-over-row { border-color: var(--amber); background: rgba(212,169,110,0.05); }
+.dirty-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); flex-shrink: 0; }
+.concept-row-handle { color: var(--muted); font-size: 12px; cursor: grab; user-select: none; text-align: center; line-height: 1; }
+.concept-row-handle:hover { color: var(--text); }
+.concept-row.draggable-row { cursor: default; }
+.concept-row.draggable-row:active { cursor: grabbing; }
+.concept-name-cell { overflow: hidden; }
+.concept-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.inline-select { background: transparent; border: 1px solid transparent; border-radius: var(--radius); padding: 2px 4px; font-size: 11px; font-family: var(--mono); cursor: pointer; -webkit-appearance: none; appearance: none; width: 100%; }
+.inline-select:hover { border-color: var(--border); background: var(--surface); }
+.inline-select:focus { border-color: var(--amber); background: var(--surface); outline: none; }
+.focus-toggle { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--muted); cursor: pointer; transition: all var(--transition); }
+.focus-toggle:hover { border-color: var(--amber); color: var(--amber); }
+.focus-toggle.on { border-color: var(--amber); color: var(--amber); background: rgba(212,169,110,0.1); }
+
+/* ─── BADGES ─────────────────────────────────────────────────────────────── */
+.badge { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-family: var(--mono); letter-spacing: 0.03em; white-space: nowrap; }
+.badge-state-active    { color: var(--sage);   background: rgba(122,175,128,0.12); }
+.badge-state-parked    { color: var(--muted);  background: rgba(154,154,154,0.1); }
+.badge-state-absorbed  { color: var(--blue);   background: rgba(122,175,200,0.1); }
+.badge-state-retired   { color: var(--muted);  background: rgba(154,154,154,0.08); text-decoration: line-through; }
+.badge-type-concept    { color: var(--muted); }
+.badge-type-engine     { color: var(--purple); }
+.badge-type-workflow   { color: var(--blue); }
+.badge-action-open     { color: var(--text); }
+.badge-action-blocked  { color: var(--danger); }
+.badge-action-done     { color: var(--sage); }
+.badge-action-task     { color: var(--muted); }
+.badge-action-prototype{ color: var(--purple); }
+.badge-action-research { color: var(--blue); }
+.badge-action-decision { color: var(--amber); }
+
+/* ─── QUEUE VIEW ──────────────────────────────────────────────────────────── */
+.queue-list { display: flex; flex-direction: column; gap: 4px; }
+.queue-item {
+  display: grid;
+  grid-template-columns: 24px 1fr 88px 76px auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: grab;
+  transition: border-color var(--transition), opacity var(--transition);
+}
+.queue-item:hover { border-color: var(--amber); }
+.queue-item.blocked-item { border-color: rgba(192,112,112,0.3); }
+.queue-item.dragging { opacity: 0.35; cursor: grabbing; }
+.queue-item.drag-over { border-color: var(--amber); background: rgba(212,169,110,0.05); }
+.queue-handle { color: var(--muted); font-size: 14px; cursor: grab; user-select: none; text-align: center; }
+.queue-concept { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.queue-desc { font-size: 13px; }
+.unqueue-btn { padding: 2px 8px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 10px; font-family: var(--mono); color: var(--muted); cursor: pointer; white-space: nowrap; }
+.unqueue-btn:hover { border-color: var(--danger); color: var(--danger); }
+.cap-warning { padding: 7px 12px; background: rgba(212,169,110,0.08); border: 1px solid rgba(212,169,110,0.2); border-radius: var(--radius); font-size: 12px; color: var(--amber); margin-bottom: 10px; }
+
+/* ─── ALL ACTIONS VIEW ────────────────────────────────────────────────────── */
+.actions-group { margin-bottom: 18px; }
+.actions-group-header { font-size: 12px; font-weight: 600; color: var(--muted); padding: 4px 0; border-bottom: 1px solid var(--border); margin-bottom: 4px; cursor: pointer; }
+.actions-group-header:hover { color: var(--text); }
+.action-row { display: grid; grid-template-columns: 1fr 88px 76px auto; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--radius); transition: background var(--transition); }
+.action-row:hover { background: var(--surface); }
+.queue-flag-btn { padding: 2px 8px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 10px; font-family: var(--mono); color: var(--muted); cursor: pointer; white-space: nowrap; transition: all var(--transition); }
+.queue-flag-btn:hover { border-color: var(--amber); color: var(--amber); }
+.queue-flag-btn.queued-badge { border-color: var(--amber); color: var(--amber); cursor: default; }
+
+/* ─── CONCEPT DETAIL ──────────────────────────────────────────────────────── */
+.concept-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+.back-btn { font-size: 12px; color: var(--muted); cursor: pointer; padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+.back-btn:hover { color: var(--text); border-color: var(--text); }
+.concept-breadcrumb { font-size: 12px; color: var(--muted); }
+.concept-breadcrumb span { color: var(--text); font-weight: 500; }
+.concept-sub-tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+.sub-tab { font-size: 12px; color: var(--muted); padding: 6px 16px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.sub-tab:hover { color: var(--text); }
+.sub-tab.active { color: var(--amber); border-bottom-color: var(--amber); }
+
+/* Concept overview */
+.concept-overview { display: flex; flex-direction: column; gap: 20px; max-width: 700px; }
+.field-group { display: flex; flex-direction: column; gap: 8px; }
+.field-group-title { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.field-row { display: flex; align-items: flex-start; gap: 12px; }
+.field-label { font-size: 11px; color: var(--muted); width: 90px; flex-shrink: 0; padding-top: 4px; }
+.field-value { flex: 1; }
+.field-select { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 8px; font-family: var(--mono); font-size: 12px; }
+.field-select:focus { border-color: var(--amber); outline: none; }
+.field-input { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 8px; font-size: 13px; }
+.flag-toggles { display: flex; gap: 6px; flex-wrap: wrap; }
+.flag-btn { padding: 3px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 11px; color: var(--muted); cursor: pointer; transition: all var(--transition); }
+.flag-btn:hover { border-color: var(--text); color: var(--text); }
+.flag-btn.on { border-color: var(--sage); color: var(--sage); }
+.flag-btn.on.focus-flag { border-color: var(--amber); color: var(--amber); }
+.tags-display { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.tag { padding: 2px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px; display: flex; align-items: center; gap: 4px; }
+.tag-remove { color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; }
+.tag-remove:hover { color: var(--danger); }
+.tag-input-inline { background: transparent; border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 2px 4px; font-size: 12px; width: 100px; }
+.tag-input-inline:focus { border-bottom-color: var(--amber); outline: none; }
+.ext-links { display: flex; gap: 8px; }
+.ext-link-btn { padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 11px; color: var(--amber); cursor: pointer; transition: background var(--transition); }
+.ext-link-btn:hover { background: rgba(212,169,110,0.08); }
+
+/* Actions in concept overview */
+.concept-actions { display: flex; flex-direction: column; gap: 4px; }
+.concept-action-row {
+  display: grid;
+  grid-template-columns: 16px 1fr 88px 76px 56px 24px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--transition);
+}
+.concept-action-row:hover { border-color: var(--amber); }
+.concept-action-row.blocked-action { border-color: rgba(192,112,112,0.3); }
+.action-desc-input { background: transparent; border: none; padding: 0; font-size: 13px; color: var(--text); width: 100%; }
+.action-desc-input:focus { outline: 1px solid var(--amber); border-radius: 2px; padding: 0 2px; }
+.action-state-select, .action-type-select { background: transparent; border: 1px solid transparent; border-radius: var(--radius); font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 2px 4px; cursor: pointer; -webkit-appearance: none; appearance: none; width: 100%; }
+.action-state-select:hover, .action-type-select:hover { border-color: var(--border); }
+.action-state-select:focus, .action-type-select:focus { border-color: var(--amber); outline: none; color: var(--text); }
+.queue-toggle-btn { padding: 2px 6px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 10px; font-family: var(--mono); color: var(--muted); cursor: pointer; white-space: nowrap; transition: all var(--transition); }
+.queue-toggle-btn:hover { border-color: var(--amber); color: var(--amber); }
+.queue-toggle-btn.queued { border-color: var(--amber); color: var(--amber); }
+.remove-action-btn { color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; text-align: center; }
+.remove-action-btn:hover { color: var(--danger); }
+.add-action-btn { align-self: flex-start; margin-top: 4px; padding: 4px 12px; border: 1px dashed var(--border); border-radius: var(--radius); font-size: 11px; color: var(--muted); cursor: pointer; transition: all var(--transition); }
+.add-action-btn:hover { border-color: var(--amber); color: var(--amber); }
+
+/* Body view */
+.concept-body-view { font-size: 14px; line-height: 1.75; max-width: 680px; }
+.jump-menu-sticky { background: var(--bg); padding: 10px 0 8px; border-bottom: 1px solid var(--border); margin-bottom: 0; }
+.jump-menu { display: flex; gap: 6px; flex-wrap: wrap; }
+.jump-link { font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; color: var(--muted); padding: 2px 8px; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; }
+.jump-link:hover { color: var(--amber); border-color: var(--amber); text-decoration: none; }
+.body-content h2 { font-size: 14px; font-weight: 600; margin: 22px 0 6px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.body-content h3 { font-size: 13px; font-weight: 600; margin: 14px 0 4px; }
+.body-content p { margin-bottom: 10px; }
+.body-content ul, .body-content ol { padding-left: 20px; margin-bottom: 10px; }
+.body-content li { margin-bottom: 3px; }
+.body-content blockquote { border-left: 3px solid var(--amber); padding-left: 12px; color: var(--muted); margin: 12px 0; font-style: italic; }
+.body-content code { font-family: var(--mono); font-size: 12px; background: var(--surface); padding: 1px 5px; border-radius: 3px; }
+.log-append { margin-top: 16px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; gap: 8px; }
+.log-append-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.log-append-input { width: 100%; resize: vertical; min-height: 56px; }
+.log-append-btn { align-self: flex-end; padding: 4px 14px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 11px; color: var(--muted); cursor: pointer; }
+.log-append-btn:hover { border-color: var(--sage); color: var(--sage); }
+
+/* Sync panel (drawer-style, shown in main area) */
+.sync-view { max-width: 560px; display: flex; flex-direction: column; gap: 20px; }
+.sync-section-title { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+.dirty-file-list { display: flex; flex-direction: column; gap: 4px; }
+.dirty-file-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--surface); border-radius: var(--radius); font-size: 12px; }
+.dirty-file-name { font-family: var(--mono); flex: 1; }
+.dirty-file-age { color: var(--muted); font-size: 11px; }
+.sync-log-list { display: flex; flex-direction: column; gap: 8px; }
+.sync-log-entry { padding: 10px 12px; background: var(--surface); border-radius: var(--radius); font-size: 12px; }
+.sync-log-time { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.sync-log-files-ok { color: var(--sage); }
+.sync-log-files-err { color: var(--danger); }
+.sync-now-btn { padding: 8px 20px; border: 1px solid var(--amber); border-radius: var(--radius); color: var(--amber); font-size: 12px; cursor: pointer; transition: background var(--transition); }
+.sync-now-btn:hover { background: rgba(212,169,110,0.08); }
+
+/* ─── MODAL ───────────────────────────────────────────────────────────────── */
+#modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; z-index: 100; }
+#modal-overlay.hidden { display: none; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 24px; max-width: 400px; width: 90%; display: flex; flex-direction: column; gap: 14px; }
+.modal-title { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--amber); text-transform: uppercase; }
+.modal-body { font-size: 13px; line-height: 1.6; }
+.modal-input { width: 100%; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.modal-btn { padding: 6px 16px; border-radius: var(--radius); font-size: 12px; cursor: pointer; border: 1px solid var(--border); color: var(--muted); }
+.modal-btn:hover { border-color: var(--text); color: var(--text); }
+.modal-btn.primary { border-color: var(--amber); color: var(--amber); }
+.modal-btn.primary:hover { background: rgba(212,169,110,0.08); }
+.modal-btn.danger { border-color: var(--danger); color: var(--danger); }
+.modal-btn.danger:hover { background: rgba(192,112,112,0.08); }
+
+/* ─── EMPTY ───────────────────────────────────────────────────────────────── */
+.empty-state { padding: 40px 20px; color: var(--muted); font-size: 13px; }
+.empty-state p { margin-bottom: 6px; }
+
+/* ─── SCROLLBAR ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+.hidden { display: none !important; }
+
+/* ─── AUTOCOMPLETE ────────────────────────────────────────────────────────── */
+.tag-autocomplete-wrap { position: relative; display: inline-block; }
+.tag-autocomplete-list {
+  position: absolute; top: 100%; left: 0; z-index: 50;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); min-width: 160px; max-height: 180px;
+  overflow-y: auto; margin-top: 2px;
+}
+.tag-autocomplete-item {
+  padding: 5px 10px; font-size: 12px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tag-autocomplete-item:hover, .tag-autocomplete-item.selected {
+  background: var(--surface2); color: var(--amber);
+}
+.tag-unresolved { border-color: var(--danger) !important; color: var(--danger) !important; }
+.tag-resolved { cursor: pointer; }
+.tag-resolved:hover { border-color: var(--amber); color: var(--amber); }
+
+/* ─── ACTION DRAG ─────────────────────────────────────────────────────────── */
+.concept-action-row.action-dragging { opacity: 0.35; }
+.concept-action-row.action-drag-over { border-color: var(--amber); background: rgba(212,169,110,0.05); }
+.action-drag-handle { color: var(--muted); font-size: 12px; cursor: grab; user-select: none; text-align: center; padding: 0 4px; }
+.action-drag-handle:hover { color: var(--text); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TOP HEADER -->
+  <div id="header">
+    <div id="logo-area">
+      <span id="logo">Matterqueue</span>
+      <span id="domain-label"></span>
+    </div>
+
+    <div id="mode-nav">
+      <button class="mode-btn active" data-mode="concepts" onclick="setMode('concepts')">Concepts</button>
+      <button class="mode-btn" data-mode="actions" onclick="setMode('actions')">Actions</button>
+    </div>
+
+    <div id="sync-area">
+      <div id="sync-indicator">
+        <div id="sync-dot"></div>
+        <span id="sync-label"></span>
+      </div>
+      <button id="sync-btn" onclick="handleSync()" disabled>Sync</button>
+      <button id="sync-log-btn" onclick="setView('sync')">Log</button>
+      <button id="change-folder-btn" onclick="changeFolder()" title="Change folder" style="padding:4px 10px;font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:var(--radius);">⟳ Folder</button>
+    </div>
+  </div>
+
+  <!-- SUB NAV -->
+  <div id="subnav">
+    <!-- populated by setMode() -->
+  </div>
+
+  <!-- MAIN -->
+  <main id="main">
+
+    <!-- BANNERS -->
+    <div id="banners" class="hidden"></div>
+
+    <!-- LANDING -->
+    <div id="view-landing" style="height:100%;display:flex;align-items:center;justify-content:center">
+      <div id="landing">
+        <h1>MATTERQUEUE</h1>
+        <p>Open a folder to begin.</p>
+        <button id="open-folder-btn" onclick="openFolder()">Open folder</button>
+        <div id="landing-error" class="hidden"></div>
+      </div>
+    </div>
+
+    <!-- CONCEPTS VIEW (All + Focus combined) -->
+    <div id="view-concepts" class="hidden">
+      <div class="view-header">
+        <div><span class="view-title" id="concepts-title">All Concepts</span><span class="view-count" id="concepts-count"></span></div>
+
+      </div>
+      <div class="filter-bar" id="concepts-filters"></div>
+      <div class="list-header"><div></div><div>Name</div><div>Type</div><div>State</div><div>Level</div><div></div></div>
+      <div class="concept-list" id="concepts-list"></div>
+    </div>
+
+    <!-- QUEUE VIEW -->
+    <div id="view-queue" class="hidden">
+      <div class="view-header">
+        <div><span class="view-title" id="queue-title">Queued</span><span class="view-count" id="queue-count"></span></div>
+        <span style="font-size:11px;color:var(--muted)">Drag to reorder</span>
+      </div>
+      <div class="filter-bar" id="queue-filters"></div>
+      <div id="queue-cap-warning" class="cap-warning hidden"></div>
+      <div class="queue-list" id="queue-list"></div>
+      <div id="queue-empty" class="empty-state hidden"><p>No queued actions.</p><p>Flag actions from All Actions or a concept's Overview.</p></div>
+    </div>
+
+    <!-- ALL ACTIONS VIEW -->
+    <div id="view-actions" class="hidden">
+      <div class="view-header">
+        <div><span class="view-title" id="actions-title">All Actions</span><span class="view-count" id="actions-count"></span></div>
+      </div>
+      <div class="filter-bar" id="actions-filters"></div>
+      <div id="actions-list"></div>
+    </div>
+
+    <!-- SYNC LOG VIEW -->
+    <div id="view-sync" class="hidden">
+      <div class="view-header"><span class="view-title">Sync Log</span></div>
+      <div class="sync-view">
+        <div>
+          <div class="sync-section-title">Pending changes</div>
+          <div id="sync-pending"></div>
+        </div>
+        <div>
+          <div class="sync-section-title">History</div>
+          <div class="sync-log-list" id="sync-log"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONCEPT DETAIL -->
+    <div id="view-concept" class="hidden">
+      <div class="concept-nav">
+        <button class="back-btn" id="concept-back-btn">← Back</button>
+        <span class="concept-breadcrumb" id="concept-breadcrumb"></span>
+      </div>
+      <div class="concept-sub-tabs">
+        <button class="sub-tab active" data-subtab="overview" onclick="setSubTab('overview')">Overview</button>
+        <button class="sub-tab" data-subtab="body" onclick="setSubTab('body')">Body</button>
+      </div>
+      <div id="subtab-overview"></div>
+      <div id="subtab-body" class="hidden"></div>
+    </div>
+
+  </main>
+</div>
+
+<!-- MODAL -->
+<div id="modal-overlay" class="hidden">
+  <div class="modal" id="modal-box"></div>
+</div>
+
+<script src="matterqueue-core.js"></script>
+<script>
+// ─── STATE ─────────────────────────────────────────────────────────────────
+
+const App = {
+  folderHandle: null,
+  systemConfig: { domain: '', label: 'Matterqueue', action_label: 'Actions', focus_limit: 5, queue_cap: 10 },
+  mds: {},
+  queue: [],
+  queueDirty: false,
+  focusOrder: [],      // ordered filenames for focus drag sort
+  currentMode: 'concepts',
+  currentView: 'landing',
+  previousView: 'concepts',
+  currentConcept: null,
+  currentSubTab: 'overview',
+  conceptPreset: 'all',      // 'all' or 'focus'
+  conceptFilters: { state: 'all', type: 'all', level: 'all' },
+  actionFilters: { state: 'open-blocked' },
+  queueFilter: 'all',   // 'all' or 'blocked'
+  syncLog: [],
+  dragSrc: null,
+  actionDragSrc: null,
+  folderName: '',
+};
+
+// ─── FOLDER OPEN ───────────────────────────────────────────────────────────
+
+// ── IndexedDB handle persistence ──────────────────────────────────────────
+const IDB_NAME = 'matterqueue', IDB_STORE = 'handles', IDB_KEY = 'folderHandle';
+
+function openIDB() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE);
+    req.onsuccess = e => res(e.target.result);
+    req.onerror = e => rej(e.target.error);
+  });
+}
+async function persistHandle(handle) {
+  try { const db = await openIDB(); const tx = db.transaction(IDB_STORE,'readwrite'); tx.objectStore(IDB_STORE).put(handle, IDB_KEY); } catch(e) {}
+}
+async function restoreHandle() {
+  try {
+    const db = await openIDB();
+    return new Promise((res) => {
+      const req = db.transaction(IDB_STORE,'readonly').objectStore(IDB_STORE).get(IDB_KEY);
+      req.onsuccess = e => res(e.target.result || null);
+      req.onerror = () => res(null);
+    });
+  } catch(e) { return null; }
+}
+
+async function openFolder() {
+  try {
+    const handle = await showDirectoryPicker({ mode: 'readwrite' });
+    App.folderHandle = handle;
+    await persistHandle(handle);
+    await loadFolder();
+  } catch (e) {
+    if (e.name !== 'AbortError') showLandingError('Could not open folder: ' + e.message);
+  }
+}
+
+async function changeFolder() {
+  try {
+    const handle = await showDirectoryPicker({ mode: 'readwrite' });
+    App.folderHandle = handle;
+    App.mds = {}; App.queue = []; App.queueDirty = false;
+    App.focusOrder = []; App.syncLog = [];
+    await persistHandle(handle);
+    await loadFolder();
+  } catch (e) {
+    if (e.name !== 'AbortError') showBanner('folder-err','error','Could not open folder: ' + e.message);
+  }
+}
+
+// On page load: try to restore persisted folder handle
+window.addEventListener('DOMContentLoaded', async () => {
+  const handle = await restoreHandle();
+  if (!handle) return;
+  try {
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm === 'granted') {
+      App.folderHandle = handle;
+      await loadFolder();
+    } else {
+      // Show a one-click prompt to re-grant permission
+      const btn = document.getElementById('open-folder-btn');
+      btn.textContent = 'Continue with ' + handle.name;
+      btn.onclick = async () => {
+        try {
+          await handle.requestPermission({ mode: 'readwrite' });
+          App.folderHandle = handle;
+          await loadFolder();
+        } catch(e) { openFolder(); }
+      };
+    }
+  } catch(e) { /* handle stale — fall through to normal open */ }
+});
+
+async function loadFolder() {
+  const handle = App.folderHandle;
+
+  try {
+    const sysFile = await handle.getFileHandle('_system.md');
+    const sysRaw = await (await sysFile.getFile()).text();
+    const { frontMatter: sys } = MQ.parseMarkdownFile(sysRaw);
+    if (sys.label) App.systemConfig.label = sys.label;
+    if (sys.action_label) App.systemConfig.action_label = sys.action_label;
+    if (sys.domain) App.systemConfig.domain = sys.domain;
+    // Optional config — fall back to defaults if not present in _system.md
+    if (sys.focus_limit != null) App.systemConfig.focus_limit = parseInt(sys.focus_limit, 10);
+    if (sys.queue_cap != null) App.systemConfig.queue_cap = parseInt(sys.queue_cap, 10);
+  } catch (e) {
+    showLandingError('No _system.md found. This may not be a Matterqueue folder.');
+    return;
+  }
+
+  App.queue = [];
+  try {
+    const qFile = await handle.getFileHandle('_queue.json');
+    const qRaw = await (await qFile.getFile()).text();
+    App.queue = JSON.parse(qRaw).queue || [];
+  } catch (e) {}
+
+  App.mds = {};
+  for await (const entry of handle.values()) {
+    if (entry.kind !== 'file') continue;
+    if (!entry.name.endsWith('.md')) continue;
+    if (entry.name.startsWith('_') || entry.name.startsWith('compilation-') || entry.name.startsWith('build-')) continue;
+
+    const file = await entry.getFile();
+    const raw = await file.text();
+    const { frontMatter, body } = MQ.parseMarkdownFile(raw);
+    const hash = await MQ.contentHash(raw);
+
+    App.mds[entry.name] = {
+      filename: entry.name, rawContent: raw, loadedHash: hash,
+      frontMatter, body,
+      pendingAppends: { actionLog: [], decisionLog: [], openQuestionsLog: [] },
+      dirty: false, loadedAt: Date.now(),
+    };
+  }
+
+  // Build initial focus order from focus:true mds, sorted by name
+  App.focusOrder = Object.values(App.mds)
+    .filter(md => md.frontMatter.focus)
+    .sort((a,b) => (a.frontMatter.name||'').localeCompare(b.frontMatter.name||''))
+    .map(md => md.filename);
+
+  checkDuplicateNames();
+  checkFocusCount();
+
+  // Load persisted sync log from _synclog.json if present
+  try {
+    const slFile = await handle.getFileHandle('_synclog.json');
+    const slRaw = await (await slFile.getFile()).text();
+    App.syncLog = JSON.parse(slRaw) || [];
+  } catch(e) { App.syncLog = []; }
+
+  App.folderName = handle.name;
+  document.getElementById('domain-label').textContent = App.systemConfig.label;
+  document.getElementById('view-landing').classList.add('hidden');
+  document.getElementById('banners').classList.remove('hidden');
+  setMode('concepts');
+}
+
+// ─── MODE & VIEW ───────────────────────────────────────────────────────────
+
+function setMode(mode) {
+  App.currentMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+
+  const subnav = document.getElementById('subnav');
+  subnav.innerHTML = '';
+
+  if (mode === 'concepts') {
+    subnav.innerHTML = `
+      <button class="subnav-tab" data-preset="all" onclick="setConceptPreset('all')">All</button>
+      <button class="subnav-tab" data-preset="focus" onclick="setConceptPreset('focus')">Focus</button>`;
+    // Mark active preset
+    subnav.querySelectorAll('[data-preset]').forEach(b =>
+      b.classList.toggle('active', b.dataset.preset === App.conceptPreset));
+    setView('concepts');
+  } else {
+    const al = esc(App.systemConfig.action_label);
+    subnav.innerHTML = `
+      <button class="subnav-tab" data-view="queue" onclick="setView('queue')">Queued</button>
+      <button class="subnav-tab" data-view="actions" onclick="setView('actions')">All ${al}</button>`;
+    setView('queue');
+  }
+}
+
+function setView(view) {
+  if (view !== 'concept') App.previousView = view;
+  App.currentView = view;
+
+  document.querySelectorAll('[id^="view-"]').forEach(el => el.classList.add('hidden'));
+  const el = document.getElementById('view-' + view);
+  if (el) el.classList.remove('hidden');
+
+  // Hide sub-nav in sync view — it belongs to Concepts/Actions modes only
+  const subnav = document.getElementById('subnav');
+  subnav.style.display = view === 'sync' ? 'none' : '';
+
+  document.querySelectorAll('.subnav-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.view === view));
+
+  const renders = { concepts: renderConcepts, focus: renderFocus, queue: renderQueue, actions: renderActions, sync: renderSyncView };
+  if (renders[view]) renders[view]();
+}
+
+function openConceptAtAction(filename, actionIdx) {
+  // Open concept Overview and scroll to the specific action row
+  openConcept(filename);
+  // After render, scroll to action row
+  requestAnimationFrame(() => {
+    const rows = document.querySelectorAll('.concept-action-row');
+    if (rows[actionIdx]) rows[actionIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+}
+
+function openConcept(filename) {
+  App.currentConcept = filename;
+  const md = App.mds[filename];
+  const modeName = App.currentMode === 'concepts' ? 'Concepts' : 'Actions';
+  document.getElementById('concept-breadcrumb').innerHTML =
+    `${modeName} → <span>${esc(md.frontMatter.name || filename)}</span>`;
+  document.getElementById('concept-back-btn').onclick = () => setView(App.previousView);
+  setSubTab('overview');
+  setView('concept');
+}
+
+function setSubTab(tab) {
+  App.currentSubTab = tab;
+  document.querySelectorAll('.sub-tab').forEach(t => t.classList.toggle('active', t.dataset.subtab === tab));
+  document.getElementById('subtab-overview').classList.toggle('hidden', tab !== 'overview');
+  document.getElementById('subtab-body').classList.toggle('hidden', tab !== 'body');
+  if (tab === 'body') renderConceptBody();
+  else renderConceptOverview();
+}
+
+// ─── LANDING ───────────────────────────────────────────────────────────────
+
+function showLandingError(msg) {
+  const el = document.getElementById('landing-error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+// ─── BANNERS ───────────────────────────────────────────────────────────────
+
+function showBanner(id, type, message) {
+  const container = document.getElementById('banners');
+  if (document.getElementById('banner-' + id)) return;
+  const div = document.createElement('div');
+  div.className = 'banner ' + type;
+  div.id = 'banner-' + id;
+  div.innerHTML = `<span>${message}</span><span class="banner-dismiss" onclick="dismissBanner('${id}')">×</span>`;
+  container.appendChild(div);
+}
+function dismissBanner(id) { document.getElementById('banner-' + id)?.remove(); }
+
+function checkDuplicateNames() {
+  const names = {};
+  for (const md of Object.values(App.mds)) {
+    const n = md.frontMatter.name; if (!n) continue;
+    if (!names[n]) names[n] = [];
+    names[n].push(md.filename);
+  }
+  for (const [name, files] of Object.entries(names)) {
+    if (files.length > 1) showBanner('dup-'+name, 'error', `Duplicate name "${name}" in ${files.join(', ')}.`);
+  }
+}
+
+function checkFocusCount() {
+  const n = Object.values(App.mds).filter(md => md.frontMatter.focus).length;
+  // Banner only shown when in focus preset; renderConcepts handles it there.
+  // Here we just clear it if count drops to 2 or below.
+  if (n <= App.systemConfig.focus_limit) dismissBanner('focus-count');
+}
+
+// ─── CONCEPTS VIEW ─────────────────────────────────────────────────────────
+
+function renderConcepts() {
+  const f = App.conceptFilters;
+  const isFocus = App.conceptPreset === 'focus';
+
+  // Preset: focus filters to focus:true; all shows everything
+  let mds = isFocus
+    ? App.focusOrder.map(fn => App.mds[fn]).filter(Boolean)
+    : Object.values(App.mds);
+
+  // Apply field filters in both presets.
+  // In focus mode filters apply within the focus pool.
+  if (f.state !== 'all') mds = mds.filter(md => md.frontMatter.state === f.state);
+  if (f.type !== 'all')  mds = mds.filter(md => md.frontMatter.type === f.type);
+  if (f.level !== 'all') mds = mds.filter(md => md.frontMatter.doc_level === f.level);
+
+  // Sort: focus preset preserves focusOrder (after filtering); all preset sorts by state then name
+  if (!isFocus) {
+    mds.sort((a, b) => {
+      const ord = { active:0, parked:1, absorbed:2, retired:3 };
+      const d = (ord[a.frontMatter.state]??4) - (ord[b.frontMatter.state]??4);
+      return d !== 0 ? d : (a.frontMatter.name||'').localeCompare(b.frontMatter.name||'');
+    });
+  }
+
+  // Title
+  let titleParts = [];
+  if (!isFocus && f.state !== 'all') titleParts.push(f.state);
+  if (!isFocus && f.type !== 'all')  titleParts.push(f.type);
+  if (!isFocus && f.level !== 'all') titleParts.push(f.level);
+  const baseTitle = isFocus ? 'Focus' : 'All Concepts';
+  document.getElementById('concepts-title').textContent =
+    titleParts.length ? baseTitle + ' · ' + titleParts.map(t => t.charAt(0).toUpperCase()+t.slice(1)).join(' · ') : baseTitle;
+
+  document.getElementById('concepts-count').textContent = `(${mds.length})`;
+
+  // Focus count banner check
+  const focusCount = Object.values(App.mds).filter(md => md.frontMatter.focus).length;
+  if (isFocus && focusCount > 2) {
+    showBanner('focus-count', 'warn', `${focusCount} concepts marked as focus. Recommended limit is ${App.systemConfig.focus_limit}.`);
+  } else {
+    dismissBanner('focus-count');
+  }
+
+  renderConceptFilters();
+  // Focus mode: draggable rows; all mode: not draggable
+  renderConceptList('concepts-list', mds, isFocus);
+}
+
+function setConceptPreset(val) {
+  App.conceptPreset = val;
+  // Sync focusOrder when switching to focus preset
+  if (val === 'focus') {
+    App.focusOrder = App.focusOrder.filter(fn => App.mds[fn]?.frontMatter?.focus);
+    Object.values(App.mds).filter(md => md.frontMatter.focus && !App.focusOrder.includes(md.filename))
+      .forEach(md => App.focusOrder.push(md.filename));
+  }
+  // Update sub-nav active state
+  document.querySelectorAll('#subnav [data-preset]').forEach(b =>
+    b.classList.toggle('active', b.dataset.preset === val));
+  renderConcepts();
+}
+
+function renderConceptFilters() {
+  const f = App.conceptFilters;
+  const isFocus = App.conceptPreset === 'focus';
+  const bar = document.getElementById('concepts-filters');
+  bar.innerHTML = '';
+
+  // Filters apply within whichever preset is active — including Focus.
+  // In focus mode the pool is already narrowed to focus:true; filters
+  // apply within that pool (useful for housecleaning a large focus set).
+  const allMds = isFocus
+    ? App.focusOrder.map(fn => App.mds[fn]).filter(Boolean)
+    : Object.values(App.mds);
+  const states = [...new Set(allMds.map(m => m.frontMatter.state).filter(Boolean))].sort();
+  const types  = [...new Set(allMds.map(m => m.frontMatter.type).filter(Boolean))].sort();
+  const levels = [...new Set(allMds.map(m => m.frontMatter.doc_level).filter(Boolean))].sort();
+
+  const addGroup = (label, key, allLabel, values) => {
+    const group = document.createElement('div');
+    group.className = 'filter-group';
+    const lbl = document.createElement('span');
+    lbl.className = 'filter-group-label';
+    lbl.textContent = label;
+    group.appendChild(lbl);
+    [['all', allLabel], ...values.map(v => [v, v])].forEach(([val, txt]) => {
+      const btn = document.createElement('button');
+      btn.className = 'filter-btn' + (f[key] === val ? ' active' : '');
+      btn.textContent = txt;
+      btn.onclick = () => { App.conceptFilters[key] = val; renderConcepts(); };
+      group.appendChild(btn);
+    });
+    bar.appendChild(group);
+  };
+
+  const sep = () => { const d = document.createElement('div'); d.className = 'filter-separator'; bar.appendChild(d); };
+
+  addGroup('State', 'state', 'All', states);
+  sep();
+  addGroup('Type', 'type', 'All', types);
+  sep();
+  addGroup('Level', 'level', 'All', levels);
+}
+
+function renderConceptList(containerId, mds, draggable) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+
+  if (mds.length === 0) {
+    container.innerHTML = '<div class="empty-state"><p>No concepts match.</p></div>';
+    return;
+  }
+
+  mds.forEach((md, idx) => {
+    const fm = md.frontMatter;
+    const row = document.createElement('div');
+    row.className = 'concept-row' + (md.dirty ? ' dirty-row' : '');
+    row.dataset.filename = md.filename;
+
+    if (draggable) {
+      row.draggable = true;
+      row.ondragstart = onFocusDragStart;
+      row.ondragover = onFocusDragOver;
+      row.ondrop = onFocusDrop;
+      row.ondragend = onFocusDragEnd;
+    }
+
+    row.onclick = (e) => {
+      if (e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON') return;
+      openConcept(md.filename);
+    };
+
+    // First column: drag handle in draggable (focus) mode; dirty dot otherwise; both if dirty+draggable
+    let firstCol;
+    if (draggable && md.dirty) {
+      firstCol = '<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div class="dirty-dot"></div><span class="concept-row-handle">⠿</span></div>';
+    } else if (draggable) {
+      firstCol = '<span class="concept-row-handle">⠿</span>';
+    } else {
+      firstCol = md.dirty ? '<div class="dirty-dot"></div>' : '<div></div>';
+    }
+    if (draggable) row.classList.add('draggable-row');
+
+    const typeClass = 'badge badge-type-' + (fm.type||'concept');
+    const stateOpts = ['active','parked','absorbed','retired'].map(s =>
+      `<option${fm.state===s?' selected':''}>${s}</option>`).join('');
+    const levelOpts = ['spark','capsule','brief','compilation'].map(l =>
+      `<option${fm.doc_level===l?' selected':''}>${l}</option>`).join('');
+    const focusOn = !!fm.focus;
+
+    row.innerHTML = `
+      ${firstCol}
+      <div class="concept-name-cell"><div class="concept-name">${esc(fm.name||md.filename)}</div></div>
+      <span class="${typeClass}">${esc(fm.type||'concept')}</span>
+      <select class="inline-select" onclick="event.stopPropagation()" onchange="updateField('${md.filename}','state',this.value)">${stateOpts}</select>
+      <select class="inline-select" onclick="event.stopPropagation()" onchange="updateField('${md.filename}','doc_level',this.value)">${levelOpts}</select>
+      <button class="focus-toggle${focusOn?' on':''}" onclick="event.stopPropagation();toggleFocus('${md.filename}')" title="Toggle focus">◈</button>
+    `;
+    container.appendChild(row);
+  });
+}
+
+// ─── FOCUS VIEW ────────────────────────────────────────────────────────────
+
+function renderFocus() {
+  // Focus view is now handled by renderConcepts with conceptPreset='focus'.
+  // This stub redirects for any legacy callers.
+  App.conceptPreset = 'focus';
+  App.focusOrder = App.focusOrder.filter(fn => App.mds[fn]?.frontMatter?.focus);
+  Object.values(App.mds).filter(md => md.frontMatter.focus && !App.focusOrder.includes(md.filename))
+    .forEach(md => App.focusOrder.push(md.filename));
+  renderConcepts();
+}
+
+// Focus drag-to-sort
+function onFocusDragStart(e) {
+  App.dragSrc = this;
+  this.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+function onFocusDragOver(e) {
+  e.preventDefault();
+  document.querySelectorAll('.concept-row').forEach(r => r.classList.remove('drag-over-row'));
+  this.classList.add('drag-over-row');
+}
+function onFocusDrop(e) {
+  e.preventDefault();
+  if (App.dragSrc === this) return;
+  const srcFn = App.dragSrc.dataset.filename;
+  const tgtFn = this.dataset.filename;
+  const srcIdx = App.focusOrder.indexOf(srcFn);
+  const tgtIdx = App.focusOrder.indexOf(tgtFn);
+  if (srcIdx !== -1 && tgtIdx !== -1) {
+    App.focusOrder.splice(srcIdx, 1);
+    App.focusOrder.splice(tgtIdx, 0, srcFn);
+  }
+  renderFocus();
+}
+function onFocusDragEnd() {
+  document.querySelectorAll('.concept-row').forEach(r => r.classList.remove('drag-over-row', 'dragging'));
+  App.dragSrc = null;
+}
+
+// ─── QUEUE VIEW ────────────────────────────────────────────────────────────
+
+function renderQueueFilters() {
+  const bar = document.getElementById('queue-filters');
+  if (!bar) return;
+  bar.innerHTML = '';
+  const group = document.createElement('div');
+  group.className = 'filter-group';
+  const lbl = document.createElement('span');
+  lbl.className = 'filter-group-label';
+  lbl.textContent = 'State';
+  group.appendChild(lbl);
+  [['all','All'],['blocked','Blocked']].forEach(([val, label]) => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-btn' + (App.queueFilter === val ? ' active' : '');
+    btn.textContent = label;
+    btn.onclick = () => { App.queueFilter = val; renderQueue(); };
+    group.appendChild(btn);
+  });
+  bar.appendChild(group);
+}
+
+function renderQueue() {
+  const list = document.getElementById('queue-list');
+  const empty = document.getElementById('queue-empty');
+  const capWarn = document.getElementById('queue-cap-warning');
+  list.innerHTML = '';
+
+  // Update title with action label
+  document.getElementById('queue-title').textContent = 'Queued ' + App.systemConfig.action_label;
+
+  renderQueueFilters();
+
+  const allItems = buildQueueItems();
+  // Apply state filter — only 'all' or 'blocked'
+  const items = App.queueFilter === 'blocked'
+    ? allItems.filter(i => i.action.state === 'blocked')
+    : allItems;
+
+  // Count reflects filter; cap warning uses total queue size not filtered size
+  document.getElementById('queue-count').textContent = `(${items.length}${App.queueFilter !== 'all' ? ' of ' + allItems.length : ''})`;
+
+  if (items.length === 0) {
+    list.classList.add('hidden');
+    empty.classList.remove('hidden');
+    empty.innerHTML = App.queueFilter === 'blocked'
+      ? '<p>No blocked actions in queue.</p>'
+      : '<p>No queued actions.</p><p>Flag actions from All Actions or a concept&#39;s Overview.</p>';
+    capWarn.classList.add('hidden');
+    return;
+  }
+  list.classList.remove('hidden'); empty.classList.add('hidden');
+  // Cap warning always based on total queue size, not filtered
+  capWarn.classList.toggle('hidden', allItems.length < App.systemConfig.queue_cap);
+  if (allItems.length >= App.systemConfig.queue_cap) capWarn.textContent = `Queue has ${allItems.length} items. Consider completing some before adding more.`;
+
+  items.forEach((item, idx) => {
+    const row = document.createElement('div');
+    row.className = 'queue-item' + (item.action.state === 'blocked' ? ' blocked-item' : '');
+    row.draggable = true;
+    row.dataset.idx = idx;
+    row.ondragstart = onQueueDragStart;
+    row.ondragover = onQueueDragOver;
+    row.ondrop = onQueueDrop;
+    row.ondragend = onQueueDragEnd;
+
+    const conceptName = esc(App.mds[item.filename]?.frontMatter?.name || item.filename);
+    const typeBadge = `<span class="badge badge-action-${item.action.type}">${item.action.type}</span>`;
+    const stateBadge = `<span class="badge badge-action-${item.action.state}">${item.action.state}</span>`;
+
+    row.innerHTML = `
+      <span class="queue-handle">⠿</span>
+      <div>
+        <div class="queue-concept">${conceptName}</div>
+        <div class="queue-desc">${esc(item.action.description)}</div>
+      </div>
+      ${typeBadge}
+      ${stateBadge}
+      <button class="unqueue-btn" onclick="unqueueAction('${item.filename}',${item.actionIdx})">Remove</button>
+    `;
+    list.appendChild(row);
+  });
+}
+
+function buildQueueItems() {
+  const allQueued = [];
+  for (const [fn, md] of Object.entries(App.mds)) {
+    if (!md?.frontMatter?.actions) continue;
+    md.frontMatter.actions.forEach((a, idx) => {
+      if (a.queued) allQueued.push({ filename: fn, actionIdx: idx, action: a });
+    });
+  }
+  const ordered = [];
+  for (const qEntry of App.queue) {
+    const match = allQueued.find(i => i.filename === qEntry.filename && i.action.description === qEntry.description);
+    if (match && !ordered.includes(match)) ordered.push(match);
+  }
+  for (const item of allQueued) { if (!ordered.includes(item)) ordered.push(item); }
+  return ordered;
+}
+
+function onQueueDragStart(e) { App.dragSrc = this; this.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
+function onQueueDragOver(e) { e.preventDefault(); document.querySelectorAll('.queue-item').forEach(el => el.classList.remove('drag-over')); this.classList.add('drag-over'); }
+function onQueueDrop(e) {
+  e.preventDefault();
+  if (App.dragSrc === this) return;
+  const srcIdx = parseInt(App.dragSrc.dataset.idx);
+  const tgtIdx = parseInt(this.dataset.idx);
+  const items = buildQueueItems();
+  const [moved] = items.splice(srcIdx, 1);
+  items.splice(tgtIdx, 0, moved);
+  App.queue = items.map(i => ({ filename: i.filename, description: i.action.description }));
+  markDirty('_queue');
+  renderQueue();
+}
+function onQueueDragEnd() { document.querySelectorAll('.queue-item').forEach(el => el.classList.remove('dragging','drag-over')); App.dragSrc = null; }
+
+function unqueueAction(filename, actionIdx) {
+  const md = App.mds[filename];
+  if (!md) return;
+  const desc = md.frontMatter.actions[actionIdx].description;
+  md.frontMatter.actions[actionIdx].queued = false;
+  App.queue = App.queue.filter(q => !(q.filename === filename && q.description === desc));
+  markDirty(filename); markDirty('_queue');
+  renderQueue();
+}
+
+// ─── ALL ACTIONS VIEW ──────────────────────────────────────────────────────
+
+function renderActions() {
+  const f = App.actionFilters;
+  const container = document.getElementById('actions-list');
+  renderActionsFilters();
+
+  // Title
+  const stateLabel = { 'open-blocked': 'Open & Blocked', 'open': 'Open', 'blocked': 'Blocked', 'done': 'Done', 'all': 'All' };
+  const al = App.systemConfig.action_label;
+  document.getElementById('actions-title').textContent =
+    f.state === 'all' ? `All ${al}` : `${stateLabel[f.state]||f.state} ${al}`;
+
+  const allMds = Object.values(App.mds).filter(Boolean).sort((a,b) =>
+    (a.frontMatter.name||'').localeCompare(b.frontMatter.name||''));
+
+  let totalCount = 0;
+  const groups = [];
+
+  allMds.forEach(md => {
+    if (!md.frontMatter?.actions?.length) return;
+    let actions = md.frontMatter.actions.map((a, idx) => ({ ...a, idx }));
+    if (f.state === 'open-blocked') actions = actions.filter(a => a.state === 'open' || a.state === 'blocked');
+    else if (f.state !== 'all') actions = actions.filter(a => a.state === f.state);
+    if (!actions.length) return;
+    totalCount += actions.length;
+    groups.push({ md, actions });
+  });
+
+  document.getElementById('actions-count').textContent = `(${totalCount})`;
+  container.innerHTML = '';
+
+  if (totalCount === 0) {
+    container.innerHTML = '<div class="empty-state"><p>No actions match the current filter.</p></div>';
+    return;
+  }
+
+  groups.forEach(({ md, actions }) => {
+    const group = document.createElement('div');
+    group.className = 'actions-group';
+    const hdr = document.createElement('div');
+    hdr.className = 'actions-group-header';
+    hdr.textContent = (md.frontMatter.name || md.filename) + ` (${actions.length})`;
+    hdr.onclick = () => openConcept(md.filename);
+    group.appendChild(hdr);
+
+    actions.forEach(action => {
+      const row = document.createElement('div');
+      row.className = 'action-row';
+      const qBtn = action.queued
+        ? `<span class="queue-flag-btn queued-badge">queued</span>`
+        : `<button class="queue-flag-btn" onclick="flagAsQueued('${md.filename}',${action.idx})">+ queue</button>`;
+      // Clicking the description jumps to that concept's Overview at the action row
+      row.innerHTML = `
+        <div class="action-row-desc" style="cursor:pointer" onclick="openConceptAtAction('${md.filename}',${action.idx})" title="Open in concept">${esc(action.description)}</div>
+        <span class="badge badge-action-${action.type}">${action.type}</span>
+        <span class="badge badge-action-${action.state}">${action.state}</span>
+        ${qBtn}`;
+      group.appendChild(row);
+    });
+    container.appendChild(group);
+  });
+}
+
+function renderActionsFilters() {
+  const f = App.actionFilters;
+  const bar = document.getElementById('actions-filters');
+  bar.innerHTML = '';
+
+  const group = document.createElement('div');
+  group.className = 'filter-group';
+  const lbl = document.createElement('span');
+  lbl.className = 'filter-group-label';
+  lbl.textContent = 'State';
+  group.appendChild(lbl);
+
+  [['open-blocked','Open + Blocked'],['all','All'],['open','Open'],['blocked','Blocked'],['done','Done']].forEach(([val, label]) => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-btn' + (f.state === val ? ' active' : '');
+    btn.textContent = label;
+    btn.onclick = () => { App.actionFilters.state = val; renderActions(); };
+    group.appendChild(btn);
+  });
+  bar.appendChild(group);
+}
+
+function flagAsQueued(filename, actionIdx) {
+  if (buildQueueItems().length >= App.systemConfig.queue_cap) {
+    showModal({ title: 'Queue is full', body: `Queue has ${App.systemConfig.queue_cap} items. Consider completing some first.`,
+      actions: [{ label: 'Add anyway', type: 'primary', fn: () => doFlag(filename, actionIdx) }, { label: 'Cancel', fn:()=>{} }] });
+    return;
+  }
+  doFlag(filename, actionIdx);
+}
+function doFlag(filename, actionIdx) {
+  const md = App.mds[filename];
+  const action = md.frontMatter.actions[actionIdx];
+  action.queued = true;
+  App.queue.push({ filename, description: action.description });
+  markDirty(filename); markDirty('_queue');
+  renderActions();
+}
+
+// ─── CONCEPT OVERVIEW ──────────────────────────────────────────────────────
+
+function renderConceptOverview() {
+  const md = App.mds[App.currentConcept];
+  if (!md) return;
+  const fm = md.frontMatter;
+  const fn = md.filename;
+  const container = document.getElementById('subtab-overview');
+  container.innerHTML = '';
+
+  const ov = document.createElement('div');
+  ov.className = 'concept-overview';
+
+  // External links
+  if (fm.compilation || fm.build_doc) {
+    const slug = MQ.nameToSlug(fm.name || '');
+    let h = '<div class="ext-links">';
+    if (fm.compilation) h += `<button class="ext-link-btn" onclick="alert('Open compilation-${slug}.md in your text editor')">compilation doc ↗</button>`;
+    if (fm.build_doc) h += `<button class="ext-link-btn" onclick="alert('Open build-${slug}.md in your text editor')">build doc ↗</button>`;
+    h += '</div>';
+    ov.innerHTML += h;
+  }
+
+  // Identity
+  const stateOpts = ['active','parked','absorbed','retired'].map(s=>`<option${fm.state===s?' selected':''}>${s}</option>`).join('');
+  const typeOpts = ['concept','engine','workflow'].map(t=>`<option${fm.type===t?' selected':''}>${t}</option>`).join('');
+  const levelOpts = ['spark','capsule','brief','compilation'].map(l=>`<option${fm.doc_level===l?' selected':''}>${l}</option>`).join('');
+
+  ov.innerHTML += `
+    <div class="field-group">
+      <div class="field-group-title">Identity</div>
+      <div class="field-row"><div class="field-label">Name</div><div class="field-value" style="font-weight:500">${esc(fm.name||'')}</div></div>
+      <div class="field-row"><div class="field-label">Type</div><div class="field-value"><select class="field-select" onchange="updateField('${fn}','type',this.value)">${typeOpts}</select></div></div>
+      <div class="field-row"><div class="field-label">Level</div><div class="field-value"><select class="field-select" onchange="updateField('${fn}','doc_level',this.value)">${levelOpts}</select></div></div>
+      <div class="field-row"><div class="field-label">State</div><div class="field-value"><select class="field-select" onchange="handleStateChange('${fn}',this.value)">${stateOpts}</select></div></div>
+      ${fm.state==='absorbed'?`<div class="field-row"><div class="field-label">Absorbed by</div><div class="field-value"><input class="field-input" value="${esc(fm.absorbed_by||'')}" onchange="updateField('${fn}','absorbed_by',this.value)" placeholder="Concept name"></div></div>`:''}
+    </div>`;
+
+  // Flags
+  const flags = {focus:'◈ focus', try_it:'try it', map_it:'map it', todoist:'todoist'};
+  const flagHtml = Object.entries(flags).map(([k,l]) =>
+    `<button class="flag-btn${fm[k]?' on':''}${k==='focus'?' focus-flag':''}" onclick="toggleFlag('${fn}','${k}',this)">${l}</button>`).join('');
+  ov.innerHTML += `<div class="field-group"><div class="field-group-title">Flags</div><div class="flag-toggles">${flagHtml}</div></div>`;
+
+  // Dates
+  ov.innerHTML += `<div class="field-group"><div class="field-group-title">Dates</div>
+    <div class="field-row"><div class="field-label">Created</div><div class="field-value" style="font-family:var(--mono);font-size:12px;color:var(--muted)">${esc(fm.created_date||'')}</div></div>
+    <div class="field-row"><div class="field-label">Modified</div><div class="field-value" style="font-family:var(--mono);font-size:12px;color:var(--muted)">${esc(fm.modified_date||'')}</div></div>
+    </div>`;
+
+  // Depends on (uses) & Synergies
+  ov.innerHTML += `<div class="field-group"><div class="field-group-title">Depends on</div>
+    <div class="field-row"><div class="field-label"></div><div class="field-value">${renderTagList(fn,'uses',fm.uses||[])}</div></div></div>`;
+  ov.innerHTML += `<div class="field-group"><div class="field-group-title">Synergies</div>
+    <div class="field-row"><div class="field-label"></div><div class="field-value">${renderTagList(fn,'synergies',fm.synergies||[])}</div></div></div>`;
+
+  // Used in — show concepts that list this MD in their uses: field
+  const usedIn = Object.values(App.mds).filter(m => m.filename !== fn && (m.frontMatter.uses||[]).includes(fm.name));
+  if (usedIn.length > 0 || fm.type === 'engine' || fm.type === 'workflow') {
+    const usedInHtml = usedIn.length
+      ? usedIn.map(m => `<span class="tag tag-resolved" onclick="openConcept('${m.filename}')" title="Open ${esc(m.frontMatter.name)}">${esc(m.frontMatter.name)}</span>`).join('')
+      : `<span style="color:var(--muted);font-size:12px">None yet</span>`;
+    ov.innerHTML += `<div class="field-group"><div class="field-group-title">Used in</div>
+      <div class="field-row"><div class="field-label"></div><div class="field-value"><div class="tags-display">${usedInHtml}</div></div></div></div>`;
+  }
+
+  // Actions
+  const actionRows = renderConceptActions(md);
+  ov.innerHTML += `<div class="field-group">
+    <div class="field-group-title">${esc(App.systemConfig.action_label)}</div>
+    <div class="concept-actions">${actionRows}</div>
+    <button class="add-action-btn" onclick="addAction('${fn}')">+ Add</button>
+    </div>`;
+
+  container.appendChild(ov);
+}
+
+function renderConceptActions(md) {
+  const actions = md.frontMatter.actions || [];
+  if (!actions.length) return `<div style="color:var(--muted);font-size:12px;padding:6px 0">No items yet.</div>`;
+  return actions.map((a, idx) => {
+    const stateOpts = ['open','blocked','done'].map(s=>`<option${a.state===s?' selected':''}>${s}</option>`).join('');
+    const typeOpts = ['task','prototype','research','decision'].map(t=>`<option${a.type===t?' selected':''}>${t}</option>`).join('');
+    return `<div class="concept-action-row${a.state==='blocked'?' blocked-action':''}"
+        draggable="true"
+        data-action-idx="${idx}"
+        ondragstart="onActionDragStart(event,'${md.filename}',${idx})"
+        ondragover="onActionDragOver(event)"
+        ondrop="onActionDrop(event,'${md.filename}',${idx})"
+        ondragend="onActionDragEnd(event)">
+      <span class="action-drag-handle">⠿</span>
+      <input class="action-desc-input" value="${esc(a.description||'')}" onchange="updateActionField('${md.filename}',${idx},'description',this.value)">
+      <select class="action-type-select" onchange="updateActionField('${md.filename}',${idx},'type',this.value)">${typeOpts}</select>
+      <select class="action-state-select" onchange="handleActionStateChange('${md.filename}',${idx},this.value)">${stateOpts}</select>
+      <button class="queue-toggle-btn${a.queued?' queued':''}" onclick="toggleActionQueue('${md.filename}',${idx},this)">${a.queued?'queued':'queue'}</button>
+      <span class="remove-action-btn" onclick="removeAction('${md.filename}',${idx})">×</span>
+    </div>`;
+  }).join('');
+}
+
+function renderTagList(filename, field, tags) {
+  const isRelationshipField = field === 'uses' || field === 'synergies';
+  const loadedNames = Object.values(App.mds).map(m => m.frontMatter.name).filter(Boolean);
+
+  const tagsHtml = tags.map((tag, idx) => {
+    const isResolved = loadedNames.includes(tag);
+    const resolvedMd = isResolved ? Object.values(App.mds).find(m => m.frontMatter.name === tag) : null;
+    const classes = 'tag' + (isRelationshipField ? (isResolved ? ' tag-resolved' : ' tag-unresolved') : '');
+    const clickHandler = isResolved && resolvedMd
+      ? `onclick="openConcept('${resolvedMd.filename}')" title="Open ${esc(tag)}"`
+      : (isRelationshipField && !isResolved ? `title="No MD found with name '${esc(tag)}'"` : '');
+    const warningIcon = isRelationshipField && !isResolved ? ' ⚠' : '';
+    return `<span class="${classes}" ${clickHandler}>${esc(tag)}${warningIcon}<span class="tag-remove" onclick="event.stopPropagation();removeTag('${filename}','${field}',${idx})">×</span></span>`;
+  }).join('');
+
+  const inputId = 'tag-input-' + slugId(filename) + '-' + field;
+  const listId = 'tag-ac-' + slugId(filename) + '-' + field;
+
+  return `<div class="tags-display">${tagsHtml}<div class="tag-autocomplete-wrap">
+    <input class="tag-input-inline" id="${inputId}" placeholder="Add…"
+      oninput="showTagAutocomplete(event,'${filename}','${field}','${listId}')"
+      onkeydown="addTagOnEnter(event,'${filename}','${field}','${listId}')"
+      onblur="setTimeout(()=>hideTagAutocomplete('${listId}'),150)">
+    <div class="tag-autocomplete-list hidden" id="${listId}"></div>
+  </div></div>`;
+}
+
+function showTagAutocomplete(e, filename, field, listId) {
+  const val = e.target.value.trim().toLowerCase();
+  const list = document.getElementById(listId);
+  if (!list) return;
+  const loadedNames = Object.values(App.mds)
+    .map(m => m.frontMatter.name).filter(Boolean)
+    .filter(n => n !== App.mds[filename]?.frontMatter?.name); // exclude self
+  const matches = val
+    ? loadedNames.filter(n => n.toLowerCase().includes(val))
+    : loadedNames;
+  if (!matches.length) { list.classList.add('hidden'); return; }
+  list.innerHTML = matches.slice(0, 10).map(n =>
+    `<div class="tag-autocomplete-item" onmousedown="selectTagAutocomplete(event,'${filename}','${field}','${listId}',${JSON.stringify(n)})">${esc(n)}</div>`
+  ).join('');
+  list.classList.remove('hidden');
+}
+
+function selectTagAutocomplete(e, filename, field, listId, name) {
+  e.preventDefault();
+  const md = App.mds[filename]; if (!md) return;
+  if (!md.frontMatter[field]) md.frontMatter[field] = [];
+  if (!md.frontMatter[field].includes(name)) {
+    md.frontMatter[field].push(name);
+    markDirty(filename);
+  }
+  hideTagAutocomplete(listId);
+  const inputId = listId.replace('tag-ac-', 'tag-input-');
+  const input = document.getElementById(inputId);
+  if (input) input.value = '';
+  renderConceptOverview();
+}
+
+function hideTagAutocomplete(listId) {
+  const list = document.getElementById(listId);
+  if (list) list.classList.add('hidden');
+}
+
+// ─── CONCEPT BODY ──────────────────────────────────────────────────────────
+
+function renderConceptBody() {
+  const md = App.mds[App.currentConcept];
+  if (!md) return;
+  const container = document.getElementById('subtab-body');
+  container.innerHTML = '';
+
+  const headings = [...md.body.matchAll(/^## (.+)$/gm)].map(m => m[1]);
+  if (headings.length) {
+    const sticky = document.createElement('div');
+    sticky.className = 'jump-menu-sticky';
+    const jump = document.createElement('div');
+    jump.className = 'jump-menu';
+    headings.forEach(h => {
+      const a = document.createElement('a');
+      a.className = 'jump-link';
+      a.textContent = h;
+      a.href = '#body-' + slugId(h);
+      a.onclick = (e) => {
+        e.preventDefault();
+        const target = document.getElementById('body-' + slugId(h));
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+      jump.appendChild(a);
+    });
+    sticky.appendChild(jump);
+    container.appendChild(sticky);
+  }
+
+  // Wrap body content and log appends in a scrollable area.
+  // The jump menu (above) is outside this scroll area, so it stays visible.
+  const scrollArea = document.createElement('div');
+  scrollArea.className = 'body-scroll-area';
+
+  const bodyDiv = document.createElement('div');
+  bodyDiv.className = 'body-content concept-body-view';
+  bodyDiv.innerHTML = renderMarkdown(md.body, true);
+  scrollArea.appendChild(bodyDiv);
+
+  ['Action Log','Decision Log','Open Questions Log'].forEach(section => {
+    if (!md.body.includes('## ' + section)) return;
+    const fieldId = 'log-input-' + slugId(section);
+    const div = document.createElement('div');
+    div.className = 'log-append';
+    div.innerHTML = `<div class="log-append-label">Append to ${section}</div>
+      <textarea class="log-append-input field-input" id="${fieldId}" placeholder="Entry text…"></textarea>
+      <button class="log-append-btn" onclick="appendLog('${App.currentConcept}','${section}','${fieldId}')">Append</button>`;
+    scrollArea.appendChild(div);
+  });
+
+  container.appendChild(scrollArea);
+}
+
+function appendLog(filename, section, inputId) {
+  const input = document.getElementById(inputId);
+  const text = input.value.trim();
+  if (!text) return;
+  const md = App.mds[filename];
+  const fieldMap = {'Action Log':'actionLog','Decision Log':'decisionLog','Open Questions Log':'openQuestionsLog'};
+  const entry = `**${MQ.todayISO()}** — ${text}`;
+  const isSpark = md.frontMatter.doc_level === 'spark';
+  const headingPresent = md.body.includes('## ' + section);
+
+  if (!headingPresent && !isSpark) {
+    // Heading not found on a non-spark MD — warn and abort.
+    // Do not write. The human may have renamed the section in their editor.
+    // (Write-back spec v1.3 — warn-and-abort behavior.)
+    showBanner('append-warn-' + filename, 'warn',
+      `Could not find "## ${section}" in ${filename}. No changes written. ` +
+      `Edit the log manually in your text editor, or rename the heading to: ## ${section}`);
+    return;
+  }
+
+  if (!headingPresent && isSpark) {
+    // Spark MD has no log sections yet — create the section at end of body.
+    // This is the explicit spark exception from write-back spec v1.3.
+    md.body = md.body.trimEnd() + `\n\n## ${section}\n\n${entry}\n`;
+    markDirty(filename);
+    input.value = '';
+    renderConceptBody();
+    return;
+  }
+
+  // Heading found — use MQ.insertAfterHeading via applyBodyAppends.
+  // insertAfterHeading now throws on heading-not-found (belt and suspenders —
+  // we already checked above, but catch in case of a race or body mutation).
+  try {
+    md.body = MQ.applyBodyAppends(md.body, { [fieldMap[section]]: [entry], actionLog:[], decisionLog:[], openQuestionsLog:[] });
+    markDirty(filename);
+    input.value = '';
+    renderConceptBody();
+  } catch (e) {
+    showBanner('append-warn-' + filename, 'warn',
+      `Append failed for ${filename}: ${e.message}`);
+  }
+}
+
+// ─── SYNC VIEW ─────────────────────────────────────────────────────────────
+
+function renderSyncView() {
+  const pending = document.getElementById('sync-pending');
+  const dirtyMds = Object.values(App.mds).filter(md => md && typeof md === 'object' && md.dirty);
+
+  if (dirtyMds.length === 0 && !isQueueDirty()) {
+    pending.innerHTML = '<div style="color:var(--muted);font-size:13px">No pending changes.</div>';
+  } else {
+    const rows = dirtyMds.map(md => {
+      const age = Math.round((Date.now() - md.loadedAt) / 60000);
+      return `<div class="dirty-file-row"><div class="dirty-dot"></div><div class="dirty-file-name">${esc(md.filename)}</div><div class="dirty-file-age">${age}m ago</div></div>`;
+    }).join('');
+    const qRow = isQueueDirty() ? `<div class="dirty-file-row"><div class="dirty-dot"></div><div class="dirty-file-name">_queue.json</div></div>` : '';
+    pending.innerHTML = `<div class="dirty-file-list">${rows}${qRow}</div><button class="sync-now-btn" style="margin-top:12px" onclick="handleSync()">Sync now</button>`;
+  }
+
+  const log = document.getElementById('sync-log');
+  log.innerHTML = App.syncLog.length === 0
+    ? '<div style="color:var(--muted);font-size:12px">No syncs this session.</div>'
+    : App.syncLog.slice().reverse().map(e => `<div class="sync-log-entry">
+        <div class="sync-log-time">${e.time}</div>
+        ${e.written.length?`<div class="sync-log-files-ok">✅ ${e.written.join(', ')}</div>`:''}
+        ${e.failed.length?`<div class="sync-log-files-err">❌ ${e.failed.map(f=>f.filename+' — '+f.error).join(', ')}</div>`:''}
+      </div>`).join('');
+}
+
+// ─── SYNC ──────────────────────────────────────────────────────────────────
+
+async function handleSync() {
+  if (!App.folderHandle) return;
+  const dirtyMds = Object.values(App.mds).filter(md => md && typeof md === 'object' && md.dirty);
+  if (!dirtyMds.length && !isQueueDirty()) return;
+
+  document.getElementById('sync-btn').disabled = true;
+  const written = [], failed = [];
+
+  // Conflict check
+  for (const md of [...dirtyMds]) {
+    try {
+      const fh = await App.folderHandle.getFileHandle(md.filename);
+      const currentContent = await (await fh.getFile()).text();
+      const currentHash = await MQ.contentHash(currentContent);
+      if (currentHash !== md.loadedHash) {
+        const action = await showConflictModal(md.filename);
+        if (action === 'skip') {
+          const reparsed = MQ.parseMarkdownFile(currentContent);
+          md.frontMatter = reparsed.frontMatter;
+          md.body = reparsed.body;
+          md.rawContent = currentContent;
+          md.loadedHash = currentHash;
+          md.dirty = false;
+          dirtyMds.splice(dirtyMds.indexOf(md), 1);
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Write MDs
+  for (const md of dirtyMds) {
+    try {
+      const reconstructed = MQ.reconstructMarkdownFile(md);
+      const fh = await App.folderHandle.getFileHandle(md.filename, { create: true });
+      const w = await fh.createWritable();
+      await w.write(reconstructed); await w.close();
+      md.loadedHash = await MQ.contentHash(reconstructed);
+      md.rawContent = reconstructed; md.dirty = false;
+      written.push(md.filename);
+    } catch (e) { failed.push({ filename: md.filename, error: e.message }); }
+  }
+
+  // Write queue
+  if (isQueueDirty()) {
+    try {
+      const qData = JSON.stringify({ updated: MQ.todayISO(), queue: App.queue }, null, 2);
+      const fh = await App.folderHandle.getFileHandle('_queue.json', { create: true });
+      const w = await fh.createWritable();
+      await w.write(qData); await w.close();
+      App.queueDirty = false;
+      written.push('_queue.json');
+    } catch (e) { failed.push({ filename: '_queue.json', error: e.message }); }
+  }
+
+  const logEntry = { time: new Date().toLocaleTimeString(), date: MQ.todayISO(), written, failed: failed.map(f=>({filename:f.filename,error:f.error})) };
+  App.syncLog.push(logEntry);
+  // Persist sync log to _synclog.json
+  try {
+    const slData = JSON.stringify(App.syncLog, null, 2);
+    const slFh = await App.folderHandle.getFileHandle('_synclog.json', { create: true });
+    const slW = await slFh.createWritable();
+    await slW.write(slData); await slW.close();
+  } catch(e) {}
+
+  if (failed.length) {
+    const wl = written.length ? `Written: ${written.join(', ')}. ` : '';
+    showBanner('sync-fail','error', `${wl}Failed: ${failed.map(f=>`${f.filename} (${f.error})`).join(', ')}. Check whether written files reference names in failed files.`);
+  } else {
+    dismissBanner('sync-fail');
+  }
+
+  updateSyncIndicator();
+  document.getElementById('sync-btn').disabled = false;
+  if (App.currentView === 'sync') renderSyncView();
+}
+
+function isQueueDirty() { return App.queueDirty; }
+
+function markDirty(filename) {
+  if (filename === '_queue') App.queueDirty = true;
+  else if (App.mds[filename]) App.mds[filename].dirty = true;
+  updateSyncIndicator();
+}
+
+function updateSyncIndicator() {
+  const n = Object.values(App.mds).filter(md => md && typeof md === 'object' && md.dirty).length + (isQueueDirty()?1:0);
+  const dot = document.getElementById('sync-dot');
+  const label = document.getElementById('sync-label');
+  const btn = document.getElementById('sync-btn');
+  if (n > 0) { dot.classList.add('dirty'); label.textContent = `${n} unsaved`; btn.classList.add('has-changes'); btn.disabled = false; }
+  else { dot.classList.remove('dirty'); label.textContent = ''; btn.classList.remove('has-changes'); btn.disabled = true; }
+}
+
+// ─── FIELD UPDATES ─────────────────────────────────────────────────────────
+
+function updateField(filename, field, value) {
+  const md = App.mds[filename];
+  if (!md) return;
+  md.frontMatter[field] = value || null;
+  markDirty(filename);
+}
+
+function toggleFocus(filename) {
+  const md = App.mds[filename];
+  if (!md) return;
+  const newVal = !md.frontMatter.focus;
+  if (newVal) {
+    const existing = Object.values(App.mds).filter(m => m.frontMatter.focus && m.filename !== filename).length;
+    if (existing >= App.systemConfig.focus_limit) {
+      showModal({ title:'Focus limit', body:`You already have ${App.systemConfig.focus_limit} focused concepts. Recommended limit is ${App.systemConfig.focus_limit}. Continue?`,
+        actions:[{label:'Continue',type:'primary',fn:()=>{md.frontMatter.focus=true;App.focusOrder.push(filename);markDirty(filename);checkFocusCount();if(App.currentView==='concepts')renderConcepts();else renderFocus();}},{label:'Cancel',fn:()=>{}}] });
+      return;
+    }
+    App.focusOrder.push(filename);
+  } else {
+    App.focusOrder = App.focusOrder.filter(f => f !== filename);
+  }
+  md.frontMatter.focus = newVal;
+  markDirty(filename);
+  checkFocusCount();
+  if (App.currentView === 'concepts') renderConcepts();
+}
+
+function toggleFlag(filename, flag, btn) {
+  if (flag === 'focus') { toggleFocus(filename); return; }
+  const md = App.mds[filename];
+  if (!md) return;
+  md.frontMatter[flag] = !md.frontMatter[flag];
+  btn.classList.toggle('on', !!md.frontMatter[flag]);
+  markDirty(filename);
+}
+
+function handleStateChange(filename, newState) {
+  const md = App.mds[filename];
+  if (!md) return;
+  if (newState === 'absorbed') {
+    showModal({ title:'Mark as absorbed', body:`Which concept is absorbing <strong>${esc(md.frontMatter.name)}</strong>?`,
+      input:{ placeholder:'Concept name', value: md.frontMatter.absorbed_by||'' },
+      actions:[{label:'Confirm',type:'primary',fn:(val)=>{
+        md.frontMatter.state='absorbed'; md.frontMatter.absorbed_by=val||''; markDirty(filename);
+        const absorbing = Object.values(App.mds).find(m=>m.frontMatter.name===val);
+        if (absorbing && absorbing.body.includes('## Decision Log')) {
+          absorbing.body = MQ.applyBodyAppends(absorbing.body, { decisionLog:[`**${MQ.todayISO()}** — ${esc(md.frontMatter.name)} absorbed into this concept. See ${filename} for full history.`], actionLog:[], openQuestionsLog:[] });
+          markDirty(absorbing.filename);
+        }
+        renderConceptOverview();
+      }},{label:'Cancel',fn:()=>renderConceptOverview()}] });
+    return;
+  }
+  if (newState === 'retired') {
+    showModal({ title:'Mark as retired', body:`Mark <strong>${esc(md.frontMatter.name)}</strong> as retired? This is a clean close — nothing carries forward.`,
+      actions:[{label:'Confirm',type:'danger',fn:()=>{md.frontMatter.state='retired';markDirty(filename);renderConceptOverview();}},{label:'Cancel',fn:()=>renderConceptOverview()}] });
+    return;
+  }
+  md.frontMatter.state = newState;
+  markDirty(filename);
+}
+
+function updateActionField(filename, idx, field, value) {
+  const md = App.mds[filename];
+  if (!md?.frontMatter?.actions) return;
+  md.frontMatter.actions[idx][field] = value;
+  markDirty(filename);
+}
+
+function handleActionStateChange(filename, idx, newState) {
+  const md = App.mds[filename];
+  if (!md) return;
+  const action = md.frontMatter.actions[idx];
+  action.state = newState;
+  markDirty(filename);
+  if (newState === 'done') {
+    if (action.type === 'prototype') { md.frontMatter.try_it = true;
+      showModal({title:'Prototype complete',body:'Add a result note?',input:{placeholder:'What did it reveal?'},
+        actions:[{label:'Add',type:'primary',fn:(v)=>{if(v&&md.body.includes('## Action Log')){md.body=MQ.applyBodyAppends(md.body,{actionLog:[`**${MQ.todayISO()}** — Prototype: ${v}`],decisionLog:[],openQuestionsLog:[]});markDirty(filename);}}},{label:'Skip',fn:()=>{}}]}); }
+    if (action.type === 'research') md.frontMatter.map_it = true;
+    if (action.type === 'decision') {
+      showModal({title:'Decision recorded',body:'Add a Decision Log entry?',input:{placeholder:'What was decided?'},
+        actions:[{label:'Add',type:'primary',fn:(v)=>{if(v&&md.body.includes('## Decision Log')){md.body=MQ.applyBodyAppends(md.body,{decisionLog:[`**${MQ.todayISO()}** — ${v}`],actionLog:[],openQuestionsLog:[]});markDirty(filename);}}},{label:'Skip',fn:()=>{}}]}); }
+  }
+}
+
+function toggleActionQueue(filename, idx, btn) {
+  const md = App.mds[filename];
+  if (!md?.frontMatter?.actions) return;
+  const action = md.frontMatter.actions[idx];
+  if (action.queued) {
+    action.queued = false;
+    App.queue = App.queue.filter(q => !(q.filename===filename && q.description===action.description));
+    btn.textContent = 'queue'; btn.classList.remove('queued');
+  } else {
+    if (buildQueueItems().length >= App.systemConfig.queue_cap) {
+      showModal({title:'Queue is full',body:`${App.systemConfig.queue_cap} items queued. Add anyway?`,
+        actions:[{label:'Add anyway',type:'primary',fn:()=>doQueueToggle(filename,idx,btn,action)},{label:'Cancel',fn:()=>{}}]});
+      return;
+    }
+    doQueueToggle(filename, idx, btn, action);
+  }
+  markDirty(filename); markDirty('_queue');
+}
+function doQueueToggle(filename, idx, btn, action) {
+  action.queued = true;
+  App.queue.push({filename, description: action.description});
+  btn.textContent = 'queued'; btn.classList.add('queued');
+  markDirty(filename); markDirty('_queue');
+}
+
+// ── Action drag-to-reorder within Concept Overview ───────────────────────────
+function onActionDragStart(e, filename, idx) {
+  App.actionDragSrc = idx;
+  e.dataTransfer.effectAllowed = 'move';
+  e.currentTarget.classList.add('action-dragging');
+}
+function onActionDragOver(e) {
+  e.preventDefault();
+  e.currentTarget.classList.add('action-drag-over');
+}
+function onActionDrop(e, filename, tgtIdx) {
+  e.preventDefault();
+  const srcIdx = App.actionDragSrc;
+  if (srcIdx === null || srcIdx === tgtIdx) return;
+  const md = App.mds[filename];
+  if (!md?.frontMatter?.actions) return;
+  const actions = md.frontMatter.actions;
+  const [moved] = actions.splice(srcIdx, 1);
+  actions.splice(tgtIdx, 0, moved);
+  // Recalculate position fields
+  actions.forEach((a, i) => a.position = i + 1);
+  markDirty(filename);
+  renderConceptOverview();
+}
+function onActionDragEnd(e) {
+  document.querySelectorAll('.concept-action-row').forEach(r => {
+    r.classList.remove('action-dragging', 'action-drag-over');
+  });
+  App.actionDragSrc = null;
+}
+
+function addAction(filename) {
+  const md = App.mds[filename];
+  if (!md) return;
+  if (!md.frontMatter.actions) md.frontMatter.actions = [];
+  md.frontMatter.actions.push({ description:'', type:'task', state:'open', position: md.frontMatter.actions.length+1 });
+  markDirty(filename);
+  renderConceptOverview();
+}
+
+function removeAction(filename, idx) {
+  const md = App.mds[filename];
+  if (!md?.frontMatter?.actions) return;
+  const a = md.frontMatter.actions[idx];
+  if (a.queued) { App.queue = App.queue.filter(q=>!(q.filename===filename&&q.description===a.description)); markDirty('_queue'); }
+  md.frontMatter.actions.splice(idx,1);
+  md.frontMatter.actions.forEach((a,i)=>a.position=i+1);
+  markDirty(filename);
+  renderConceptOverview();
+}
+
+function addTagOnEnter(e, filename, field, listId) {
+  if (e.key === 'Escape') { hideTagAutocomplete(listId); return; }
+  if (e.key !== 'Enter') return;
+  const val = e.target.value.trim(); if (!val) return;
+  const md = App.mds[filename]; if (!md) return;
+  if (!md.frontMatter[field]) md.frontMatter[field] = [];
+  if (!md.frontMatter[field].includes(val)) {
+    md.frontMatter[field].push(val);
+    markDirty(filename);
+  }
+  e.target.value = '';
+  hideTagAutocomplete(listId);
+  renderConceptOverview();
+}
+
+function removeTag(filename, field, idx) {
+  const md = App.mds[filename]; if (!md) return;
+  md.frontMatter[field].splice(idx,1);
+  markDirty(filename);
+  renderConceptOverview();
+}
+
+// ─── MODAL ─────────────────────────────────────────────────────────────────
+
+function showModal({ title, body, input, actions }) {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('modal-overlay');
+    const box = document.getElementById('modal-box');
+    box.innerHTML = `<div class="modal-title">${title}</div><div class="modal-body">${body}</div>`;
+    let inputEl = null;
+    if (input) {
+      inputEl = document.createElement('input');
+      inputEl.className = 'modal-input field-input';
+      inputEl.placeholder = input.placeholder||'';
+      inputEl.value = input.value||'';
+      box.appendChild(inputEl);
+    }
+    const actionsEl = document.createElement('div');
+    actionsEl.className = 'modal-actions';
+    actions.forEach(action => {
+      const btn = document.createElement('button');
+      btn.className = 'modal-btn' + (action.type ? ' '+action.type : '');
+      btn.textContent = action.label;
+      btn.onclick = () => { overlay.classList.add('hidden'); const v = inputEl?.value; action.fn(v); resolve(v); };
+      actionsEl.appendChild(btn);
+    });
+    box.appendChild(actionsEl);
+    overlay.classList.remove('hidden');
+    if (inputEl) inputEl.focus();
+  });
+}
+
+function showConflictModal(filename) {
+  // Standalone implementation — does not use showModal's input-value resolution path.
+  // Two buttons resolve the promise explicitly with 'skip' or 'overwrite'.
+  // 'skip' (Keep disk version) is the safe default — rendered first, receives focus.
+  return new Promise(resolve => {
+    const overlay = document.getElementById('modal-overlay');
+    const box = document.getElementById('modal-box');
+    box.innerHTML = `
+      <div class="modal-title">File modified externally</div>
+      <div class="modal-body">
+        <strong>${esc(filename)}</strong> was modified outside the viewer since this session started.
+        Your viewer changes will overwrite those external changes if you proceed.
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn" id="conflict-skip-btn">Keep disk version</button>
+        <button class="modal-btn danger" id="conflict-overwrite-btn">Overwrite with viewer changes</button>
+      </div>`;
+    overlay.classList.remove('hidden');
+    document.getElementById('conflict-skip-btn').focus();
+    document.getElementById('conflict-skip-btn').onclick = () => {
+      overlay.classList.add('hidden');
+      resolve('skip');
+    };
+    document.getElementById('conflict-overwrite-btn').onclick = () => {
+      overlay.classList.add('hidden');
+      resolve('overwrite');
+    };
+  });
+}
+
+// ─── MARKDOWN RENDERER ─────────────────────────────────────────────────────
+
+function renderMarkdown(md, addIds) {
+  let html = esc(md)
+    .replace(/^## (.+)$/gm, (_,h) => `<h2${addIds?' id="body-'+slugId(h)+'"':''}>${h}</h2>`)
+    .replace(/^### (.+)$/gm, (_,h) => `<h3>${h}</h3>`)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    .replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*?<\/li>\n?)+/gs, m => `<ul>${m}</ul>`)
+    .replace(/\n\n(?!<)/g, '</p><p>');
+  if (!html.startsWith('<')) html = '<p>' + html + '</p>';
+  return html;
+}
+
+// ─── UTILITIES ─────────────────────────────────────────────────────────────
+
+function esc(str) {
+  if (str == null) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function slugId(str) { return String(str).toLowerCase().replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-'); }
+
+window.addEventListener('beforeunload', e => {
+  if (Object.values(App.mds).some(md => md && typeof md === 'object' && md.dirty) || isQueueDirty()) {
+    e.preventDefault(); e.returnValue = '';
+  }
+});
+</script>
+</body>
+</html>
